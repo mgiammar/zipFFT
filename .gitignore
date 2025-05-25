@@ -30,3 +30,34 @@
 *.exe
 *.out
 *.app
+
+# Python cache and packaging
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+pip-wheel-metadata/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and coverage
+.coverage
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+htmlcov/
+.mypy_cache/
+.dmypy.json
+.pyre/
