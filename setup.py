@@ -1,17 +1,49 @@
-"""Setup script for binding C++ code with Python using pybind11."""
+"""Setup script for binding C++/CUDA code with Python using pybind11."""
 
 from setuptools import setup, Extension
 import pybind11
 
-# TODO: Make this setup script more robust
+import torch
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+
+__version__ = "0.0.1alpha"
+
+
+# fmt: off
+DEBUG_PRINT = True
+if DEBUG_PRINT:
+    print("Using pybind11 include directory:            ", pybind11.get_include())
+    print("Using torch include directory:               ", pybind11.get_include(user=True))
+    print("Using torch library directory:               ", pybind11.get_cmake_dir())
+    print("Using library dirs:                          ", torch.utils.cpp_extension.CUDA_HOME)
+    print("                                             ", torch.utils.cpp_extension.TORCH_LIB_PATH)
+# fmt: on
+
+# TODO: Make this setup script more robust (plus conda recipe)
 setup(
     ext_modules=[
-        Extension(
-            "zipfft.binding",
-            ["src/lib/binding.cpp"],
-            include_dirs=[pybind11.get_include()],
-            language="c++",
-            extra_compile_args=["-O3"],  # Optimization level
-        )
-    ]
+        CUDAExtension(
+            name="zipfft.binding_cuda",
+            sources=[
+                "src/lib/binding_cuda.cpp",
+                "src/lib/fft_kernels.cu",
+            ],
+            include_dirs=[
+                pybind11.get_include(),
+                "/home/mgiammar/miniconda3/envs/zipfft/include/",
+            ],
+            extra_compile_args={
+                "cxx": ["-O3"],  # Optimization level for C++
+                "nvcc": [
+                    "-O3",  # Optimization level for CUDA
+                    "-U__CUDA_NO_HALF_OPERATORS__",  # Undefine PyTorch default macros; Necessary to get commondx compiled
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+                    "-U__CUDA_NO_HALF2_OPERATORS__",
+                ],
+            },
+        ),
+    ],
+    cmdclass={"build_ext": BuildExtension},
+    version=__version__,
 )
