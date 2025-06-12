@@ -10,7 +10,7 @@ __version__ = "0.0.1alpha"
 
 
 # fmt: off
-DEBUG_PRINT = True
+DEBUG_PRINT = False
 if DEBUG_PRINT:
     print("Using pybind11 include directory:            ", pybind11.get_include())
     print("Using torch include directory:               ", pybind11.get_include(user=True))
@@ -25,17 +25,17 @@ setup(
         CUDAExtension(
             name="zipfft.binding_cuda",
             sources=[
-                "src/lib/binding_cuda.cpp",
-                "src/lib/fft_kernels.cu",
+                "src/cuda/zipfft_binding.cu",
+                "src/cuda/fft_c2c_1d.cu",
             ],
             include_dirs=[
                 pybind11.get_include(),
-                "/home/mgiammar/miniconda3/envs/zipfft/include/",
             ],
             extra_compile_args={
-                "cxx": ["-O3"],  # Optimization level for C++
+                # "cxx": ["-O3"],
                 "nvcc": [
-                    "-O3",  # Optimization level for CUDA
+                    "-O3",
+                    "-std=c++17",
                     "-U__CUDA_NO_HALF_OPERATORS__",  # Undefine PyTorch default macros; Necessary to get commondx compiled
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
