@@ -82,7 +82,7 @@ void ifft_c2c_1d(torch::Tensor input) {
     }
 }
 
-PYBIND11_MODULE(binding_cuda, m) {
+PYBIND11_MODULE(zipfft_binding, m) {
     m.doc() = "pybind11 binding example";
     m.def("fft_c2c_1d", &fft_c2c_1d, "Run in-place 1D C2C FFT using cuFFTDx.");
     m.def("ifft_c2c_1d", &ifft_c2c_1d, "Run in-place 1D C2C IFFT using cuFFTDx.");

@@ -23,7 +23,7 @@ if DEBUG_PRINT:
 setup(
     ext_modules=[
         CUDAExtension(
-            name="zipfft.binding_cuda",
+            name="zipfft.zipfft_binding",
             sources=[
                 "src/cuda/zipfft_binding.cu",
                 "src/cuda/fft_c2c_1d.cu",
