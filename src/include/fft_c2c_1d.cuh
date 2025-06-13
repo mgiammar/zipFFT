@@ -6,7 +6,10 @@
 #include <device_launch_parameters.h>
 #endif
 
-template <typename T, unsigned int DataSize>
+template <typename T, unsigned int FFTSize>
 int block_fft_c2c_1d(T* data);
+
+template <typename T, unsigned int FFTSize>
+int block_ifft_c2c_1d(T* data);
 
 #endif // FFT_C2C_1D_CUH

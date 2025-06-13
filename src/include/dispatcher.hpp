@@ -56,30 +56,32 @@ namespace dispatcher {
     /**
      * @brief Launcher for a templated CUDA kernel functor which takes a pointer to data as an argument.
      * Determines the CUDA device architecture and calls the appropriate specialization of the functor.
-     * The Functor is expected to be templated on <unsigned int Arch, typename T, unsigned int DataSize>.
+     * The Functor is expected to be templated on <unsigned int Arch, typename T, unsigned int FFTSize>.
      * 
      * @tparam Functor The functor template: template<unsigned int, typename, unsigned int> class.
      * @tparam T_actual The actual data type for this invocation.
-     * @tparam DataSize_actual The actual data size for this invocation.
+     * @tparam FFTSize_actual The actual data size for this invocation.
+     * @tparam ForwardFFT_actual Whether the functor is for a forward FFT (true) or inverse FFT (false).
      * @param data Pointer to the data to be processed, allocated on the device.
      * @return int On success, returns 0. On failure (unsupported architecture), returns 1.
      */
-    template< template <unsigned int /* Arch */, typename /* T_functor_type */, unsigned int /* DataSize_functor_type */> class Functor,
+    template< template <unsigned int /* Arch */, typename /* T_functor_type */, unsigned int /* FFTSize_functor_type */, bool /* ForwardFFT_functor_type */> class Functor,
               typename T_actual,
-              unsigned int DataSize_actual >
+              unsigned int FFTSize_actual,
+              bool ForwardFFT_actual >
     inline int sm_runner_inplace(T_actual* data) {
         const auto cuda_device_arch = get_cuda_device_arch(); // Assuming get_cuda_device_arch() is defined
 
         switch (cuda_device_arch) {
-            case 700: Functor<700, T_actual, DataSize_actual>()(data); return 0;
-            case 720: Functor<720, T_actual, DataSize_actual>()(data); return 0;
-            case 750: Functor<750, T_actual, DataSize_actual>()(data); return 0;
-            case 800: Functor<800, T_actual, DataSize_actual>()(data); return 0;
-            case 860: Functor<860, T_actual, DataSize_actual>()(data); return 0;
-            case 870: Functor<870, T_actual, DataSize_actual>()(data); return 0;
-            case 890: Functor<890, T_actual, DataSize_actual>()(data); return 0;
-            case 900: Functor<900, T_actual, DataSize_actual>()(data); return 0;
-            case 1200: Functor<900, T_actual, DataSize_actual>()(data); return 0;
+            case 700:  Functor<700, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 720:  Functor<720, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 750:  Functor<750, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 800:  Functor<800, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 860:  Functor<860, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 870:  Functor<870, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 890:  Functor<890, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 900:  Functor<900, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            case 1200: Functor<900, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
             // Add more architectures as needed
         }
         // Consider logging or returning a more specific error for unsupported architecture
@@ -103,14 +105,14 @@ namespace dispatcher {
         const auto cuda_device_arch = get_cuda_device_arch();
 
         switch (cuda_device_arch) {
-            case 700: Functor<700>()(input, output); return 0;
-            case 720: Functor<720>()(input, output); return 0;
-            case 750: Functor<750>()(input, output); return 0;
-            case 800: Functor<800>()(input, output); return 0;
-            case 860: Functor<860>()(input, output); return 0;
-            case 870: Functor<870>()(input, output); return 0;
-            case 890: Functor<890>()(input, output); return 0;
-            case 900: Functor<900>()(input, output); return 0;
+            case 700:  Functor<700>()(input, output); return 0;
+            case 720:  Functor<720>()(input, output); return 0;
+            case 750:  Functor<750>()(input, output); return 0;
+            case 800:  Functor<800>()(input, output); return 0;
+            case 860:  Functor<860>()(input, output); return 0;
+            case 870:  Functor<870>()(input, output); return 0;
+            case 890:  Functor<890>()(input, output); return 0;
+            case 900:  Functor<900>()(input, output); return 0;
             case 1200: Functor<900>()(input, output); return 0;
         }
         return 1; // Unsupported architecture
@@ -133,14 +135,14 @@ namespace dispatcher {
         const auto cuda_device_arch = get_cuda_device_arch();
 
         switch (cuda_device_arch) {
-            case 700: Functor<700>()(input, kernel, output); return 0;
-            case 720: Functor<720>()(input, kernel, output); return 0;
-            case 750: Functor<750>()(input, kernel, output); return 0;
-            case 800: Functor<800>()(input, kernel, output); return 0;
-            case 860: Functor<860>()(input, kernel, output); return 0;
-            case 870: Functor<870>()(input, kernel, output); return 0;
-            case 890: Functor<890>()(input, kernel, output); return 0;
-            case 900: Functor<900>()(input, kernel, output); return 0;
+            case 700:  Functor<700>()(input, kernel, output); return 0;
+            case 720:  Functor<720>()(input, kernel, output); return 0;
+            case 750:  Functor<750>()(input, kernel, output); return 0;
+            case 800:  Functor<800>()(input, kernel, output); return 0;
+            case 860:  Functor<860>()(input, kernel, output); return 0;
+            case 870:  Functor<870>()(input, kernel, output); return 0;
+            case 890:  Functor<890>()(input, kernel, output); return 0;
+            case 900:  Functor<900>()(input, kernel, output); return 0;
             case 1200: Functor<900>()(input, kernel, output); return 0;
         }
         return 1; // Unsupported architecture

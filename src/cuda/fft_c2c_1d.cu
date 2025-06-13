@@ -25,18 +25,19 @@ void block_fft_c2c_1d_kernel(typename FFT::value_type* data) {
 }
 
 // --- Launcher Definition ---
-template<unsigned int Arch, typename T, unsigned int DataSize>
+template<unsigned int Arch, typename T, unsigned int FFTSize, bool ForwardFFT>
 inline void block_fft_c2c_1d_launcher(T* data) {
     using namespace cufftdx;
 
     // Since complex input to FFT, convert vector into its scalar type
     using scalar_precision_type = example::get_scalar_component_t<T>;
+    constexpr auto fft_direction = ForwardFFT ? fft_direction::forward : fft_direction::inverse;
 
     using FFT = decltype(
         Block() +
-        Size<DataSize>() +
+        Size<FFTSize>() +
         Type<fft_type::c2c>() +
-        Direction<fft_direction::forward>() +
+        Direction<fft_direction>() +
         Precision<scalar_precision_type>() +
         ElementsPerThread<8>() +
         FFTsPerBlock<2>() +
@@ -61,10 +62,10 @@ inline void block_fft_c2c_1d_launcher(T* data) {
 }
 
 // --- Functor for Dispatcher ---
-template<unsigned int Arch, typename T_functor, unsigned int DataSize_functor>
+template<unsigned int Arch, typename T_functor, unsigned int FFTSize_functor, bool ForwardFFT_functor>
 struct fft_dispatch_functor {
     void operator()(T_functor* data) {
-        block_fft_c2c_1d_launcher<Arch, T_functor, DataSize_functor>(data);
+        block_fft_c2c_1d_launcher<Arch, T_functor, FFTSize_functor, ForwardFFT_functor>(data);
     }
 };
 
@@ -74,18 +75,36 @@ struct fft_dispatch_functor {
  * @brief Callable function to perform a 1D complex-to-complex FFT using cuFFTDx.
  * 
  * @tparam T The data type (currently must be float2).
- * @tparam DataSize Number of elements in the data array (currently must be one of 128, 256, 512, or 1024).
+ * @tparam FFTSize Number of elements in the data array (currently must be one of 128, 256, 512, or 1024).
  * @param data The pointer to the data array containing complex numbers, allocated on device.
  * @return int Upon successful execution, returns 0. Otherwise, returns an error code.
  */
-template <typename T, unsigned int DataSize>
+template <typename T, unsigned int FFTSize>
 int block_fft_c2c_1d(T* data) {
     static_assert(std::is_same_v<T, float2>, "block_fft_c2c_1d: Only float2 type is currently supported.");
-    static_assert(DataSize == 128 || DataSize == 256 || DataSize == 512 || DataSize == 1024,
-                  "block_fft_c2c_1d: DataSize must be 128, 256, 512, or 1024.");
+    static_assert(FFTSize == 128 || FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
+                  "block_fft_c2c_1d: FFTSize must be 128, 256, 512, or 1024.");
 
     // Call the modified dispatcher with the simpler functor
-    int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, DataSize>(data);
+    int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, true>(data);
+
+    // Runtime assertion that the dispatcher returned successfully
+    if (result != 0) {
+        std::cerr << "block_fft_c2c_1d: Error in dispatcher, result code: " << result << std::endl;
+        std::exit(result);
+    }
+
+    return result;
+}
+
+template <typename T, unsigned int FFTSize>
+int block_ifft_c2c_1d(T* data) {
+    static_assert(std::is_same_v<T, float2>, "block_fft_c2c_1d: Only float2 type is currently supported.");
+    static_assert(FFTSize == 128 || FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
+                  "block_fft_c2c_1d: FFTSize must be 128, 256, 512, or 1024.");
+
+    // Call the modified dispatcher with the simpler functor
+    int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, false>(data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {
@@ -107,3 +126,8 @@ template int block_fft_c2c_1d<float2, 128u >(float2* data);
 template int block_fft_c2c_1d<float2, 256u >(float2* data);
 template int block_fft_c2c_1d<float2, 512u >(float2* data);
 template int block_fft_c2c_1d<float2, 1024u>(float2* data);
+
+template int block_ifft_c2c_1d<float2, 128u >(float2* data);
+template int block_ifft_c2c_1d<float2, 256u >(float2* data);
+template int block_ifft_c2c_1d<float2, 512u >(float2* data);
+template int block_ifft_c2c_1d<float2, 1024u>(float2* data);
