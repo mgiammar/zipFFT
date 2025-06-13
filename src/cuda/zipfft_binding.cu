@@ -20,6 +20,15 @@ void fft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
+        case 16:
+            block_fft_c2c_1d<float2, 16>(data_ptr);
+            break;
+        case 32:
+            block_fft_c2c_1d<float2, 32>(data_ptr);
+            break;
+        case 64:
+            block_fft_c2c_1d<float2, 64>(data_ptr);
+            break;
         case 128:
             block_fft_c2c_1d<float2, 128>(data_ptr);
             break;
@@ -47,6 +56,15 @@ void ifft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
+        case 16:
+            block_ifft_c2c_1d<float2, 16>(data_ptr);
+            break;
+        case 32:
+            block_ifft_c2c_1d<float2, 32>(data_ptr);
+            break;
+        case 64:
+            block_ifft_c2c_1d<float2, 64>(data_ptr);
+            break;
         case 128:
             block_ifft_c2c_1d<float2, 128>(data_ptr);
             break;

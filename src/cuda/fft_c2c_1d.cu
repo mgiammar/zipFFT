@@ -82,8 +82,9 @@ struct fft_dispatch_functor {
 template <typename T, unsigned int FFTSize>
 int block_fft_c2c_1d(T* data) {
     static_assert(std::is_same_v<T, float2>, "block_fft_c2c_1d: Only float2 type is currently supported.");
-    static_assert(FFTSize == 128 || FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
-                  "block_fft_c2c_1d: FFTSize must be 128, 256, 512, or 1024.");
+    static_assert(FFTSize == 16 || FFTSize == 32 || FFTSize == 64 || FFTSize == 128 || 
+                  FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
+                  "block_fft_c2c_1d: FFTSize must be 16, 32, 64, 128, 256, 512, or 1024.");
 
     // Call the modified dispatcher with the simpler functor
     int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, true>(data);
@@ -99,16 +100,17 @@ int block_fft_c2c_1d(T* data) {
 
 template <typename T, unsigned int FFTSize>
 int block_ifft_c2c_1d(T* data) {
-    static_assert(std::is_same_v<T, float2>, "block_fft_c2c_1d: Only float2 type is currently supported.");
-    static_assert(FFTSize == 128 || FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
-                  "block_fft_c2c_1d: FFTSize must be 128, 256, 512, or 1024.");
+    static_assert(std::is_same_v<T, float2>, "block_ifft_c2c_1d: Only float2 type is currently supported.");
+    static_assert(FFTSize == 16 || FFTSize == 32 || FFTSize == 64 || FFTSize == 128 || 
+                  FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
+                  "block_ifft_c2c_1d: FFTSize must be 16, 32, 64, 128, 256, 512, or 1024.");
 
     // Call the modified dispatcher with the simpler functor
     int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, false>(data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {
-        std::cerr << "block_fft_c2c_1d: Error in dispatcher, result code: " << result << std::endl;
+        std::cerr << "block_ifft_c2c_1d: Error in dispatcher, result code: " << result << std::endl;
         std::exit(result);
     }
 
@@ -122,11 +124,17 @@ int block_ifft_c2c_1d(T* data) {
 //
 // TODO: Expand these templated instantiations to cover more useful sizes/types
 //       maybe using a macro to generate them automatically? 
+template int block_fft_c2c_1d<float2, 16u  >(float2* data);
+template int block_fft_c2c_1d<float2, 32u  >(float2* data);
+template int block_fft_c2c_1d<float2, 64u  >(float2* data);
 template int block_fft_c2c_1d<float2, 128u >(float2* data);
 template int block_fft_c2c_1d<float2, 256u >(float2* data);
 template int block_fft_c2c_1d<float2, 512u >(float2* data);
 template int block_fft_c2c_1d<float2, 1024u>(float2* data);
 
+template int block_ifft_c2c_1d<float2, 16u  >(float2* data);
+template int block_ifft_c2c_1d<float2, 32u  >(float2* data);
+template int block_ifft_c2c_1d<float2, 64u  >(float2* data);
 template int block_ifft_c2c_1d<float2, 128u >(float2* data);
 template int block_ifft_c2c_1d<float2, 256u >(float2* data);
 template int block_ifft_c2c_1d<float2, 512u >(float2* data);
