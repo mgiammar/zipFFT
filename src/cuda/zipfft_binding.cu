@@ -1,4 +1,4 @@
-// C++ file for binding function calls to Python
+ // C++ file for binding function calls to Python
 #include <stdio.h>
 #include <iostream>
 #include <c10/util/complex.h>
@@ -21,27 +21,13 @@ void fft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:
-            block_fft_c2c_1d<float2, 16>(data_ptr);
-            break;
-        case 32:
-            block_fft_c2c_1d<float2, 32>(data_ptr);
-            break;
-        case 64:
-            block_fft_c2c_1d<float2, 64>(data_ptr);
-            break;
-        case 128:
-            block_fft_c2c_1d<float2, 128>(data_ptr);
-            break;
-        case 256:
-            block_fft_c2c_1d<float2, 256>(data_ptr);
-            break;
-        case 512:
-            block_fft_c2c_1d<float2, 512>(data_ptr);
-            break;
-        case 1024:
-            block_fft_c2c_1d<float2, 1024>(data_ptr);
-            break;
+        case 16:   block_fft_c2c_1d<float2, 16  >(data_ptr); break;
+        case 32:   block_fft_c2c_1d<float2, 32  >(data_ptr); break;
+        case 64:   block_fft_c2c_1d<float2, 64  >(data_ptr); break;
+        case 128:  block_fft_c2c_1d<float2, 128 >(data_ptr); break;
+        case 256:  block_fft_c2c_1d<float2, 256 >(data_ptr); break;
+        case 512:  block_fft_c2c_1d<float2, 512 >(data_ptr); break;
+        case 1024: block_fft_c2c_1d<float2, 1024>(data_ptr); break;
         default:
             TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
     }
@@ -57,27 +43,13 @@ void ifft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:
-            block_ifft_c2c_1d<float2, 16>(data_ptr);
-            break;
-        case 32:
-            block_ifft_c2c_1d<float2, 32>(data_ptr);
-            break;
-        case 64:
-            block_ifft_c2c_1d<float2, 64>(data_ptr);
-            break;
-        case 128:
-            block_ifft_c2c_1d<float2, 128>(data_ptr);
-            break;
-        case 256:
-            block_ifft_c2c_1d<float2, 256>(data_ptr);
-            break;
-        case 512:
-            block_ifft_c2c_1d<float2, 512>(data_ptr);
-            break;
-        case 1024:
-            block_ifft_c2c_1d<float2, 1024>(data_ptr);
-            break;
+        case 16:   block_ifft_c2c_1d<float2, 16  >(data_ptr); break;
+        case 32:   block_ifft_c2c_1d<float2, 32  >(data_ptr); break;
+        case 64:   block_ifft_c2c_1d<float2, 64  >(data_ptr); break;
+        case 128:  block_ifft_c2c_1d<float2, 128 >(data_ptr); break;
+        case 256:  block_ifft_c2c_1d<float2, 256 >(data_ptr); break;
+        case 512:  block_ifft_c2c_1d<float2, 512 >(data_ptr); break;
+        case 1024: block_ifft_c2c_1d<float2, 1024>(data_ptr); break;
         default:
             TORCH_CHECK(false, "Unsupported IFFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
     }
@@ -85,41 +57,57 @@ void ifft_c2c_1d(torch::Tensor input) {
 
 void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
-    TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
-    TORCH_CHECK(output.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
     TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+
+    TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
+    TORCH_CHECK(output.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
     TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
 
     TORCH_CHECK(input.size(0) / 2 + 1 == output.size(0), "Output tensor size must be (input_size / 2 + 1)");
 
-    float* input_ptr = input.data_ptr<float>();
-    float2* output_ptr = reinterpret_cast<float2*>(output.data_ptr<c10::complex<float>>());
-    unsigned int fft_size = input.size(0);
+    float*       input_ptr  = input.data_ptr<float>();
+    float2*      output_ptr = reinterpret_cast<float2*>(output.data_ptr<c10::complex<float>>());
+    unsigned int fft_size   = input.size(0);
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:
-            block_fft_r2c_1d<float, float2, 16>(input_ptr, output_ptr);
-            break;
-        case 32:
-            block_fft_r2c_1d<float, float2, 32>(input_ptr, output_ptr);
-            break;
-        case 64:
-            block_fft_r2c_1d<float, float2, 64>(input_ptr, output_ptr);
-            break;
-        case 128:
-            block_fft_r2c_1d<float, float2, 128>(input_ptr, output_ptr);
-            break;
-        case 256:
-            block_fft_r2c_1d<float, float2, 256>(input_ptr, output_ptr);
-            break;
-        case 512:
-            block_fft_r2c_1d<float, float2, 512>(input_ptr, output_ptr);
-            break;
-        case 1024:
-            block_fft_r2c_1d<float, float2, 1024>(input_ptr, output_ptr);
-            break;
+        case 16:   block_real_fft_1d<float, float2, 16,   true>(input_ptr, output_ptr); break;
+        case 32:   block_real_fft_1d<float, float2, 32,   true>(input_ptr, output_ptr); break;
+        case 64:   block_real_fft_1d<float, float2, 64,   true>(input_ptr, output_ptr); break;
+        case 128:  block_real_fft_1d<float, float2, 128,  true>(input_ptr, output_ptr); break;
+        case 256:  block_real_fft_1d<float, float2, 256,  true>(input_ptr, output_ptr); break;
+        case 512:  block_real_fft_1d<float, float2, 512,  true>(input_ptr, output_ptr); break;
+        case 1024: block_real_fft_1d<float, float2, 1024, true>(input_ptr, output_ptr); break;
+        default:
+            TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
+    }
+}
+
+void ifft_c2r_1d(torch::Tensor input, torch::Tensor output) {
+    TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
+    TORCH_CHECK(input.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
+    TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+
+    TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
+    TORCH_CHECK(output.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
+    TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
+
+    TORCH_CHECK(output.size(0) / 2 + 1 == input.size(0), "Output tensor size must be (output_size / 2 + 1)");
+
+    float2*      input_ptr  = reinterpret_cast<float2*>(input.data_ptr<c10::complex<float>>());
+    float*       output_ptr = output.data_ptr<float>();
+    unsigned int fft_size   = output.size(0);
+
+    // Using a switch statement to handle the pre-defined FFT sizes
+    switch (fft_size) {
+        case 16:   block_real_fft_1d<float2, float, 16,   false>(input_ptr, output_ptr); break;
+        case 32:   block_real_fft_1d<float2, float, 32,   false>(input_ptr, output_ptr); break;
+        case 64:   block_real_fft_1d<float2, float, 64,   false>(input_ptr, output_ptr); break;
+        case 128:  block_real_fft_1d<float2, float, 128,  false>(input_ptr, output_ptr); break;
+        case 256:  block_real_fft_1d<float2, float, 256,  false>(input_ptr, output_ptr); break;
+        case 512:  block_real_fft_1d<float2, float, 512,  false>(input_ptr, output_ptr); break;
+        case 1024: block_real_fft_1d<float2, float, 1024, false>(input_ptr, output_ptr); break;
         default:
             TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
     }
@@ -127,7 +115,8 @@ void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
 
 PYBIND11_MODULE(zipfft_binding, m) {
     m.doc() = "pybind11 binding example";
-    m.def("fft_c2c_1d", &fft_c2c_1d, "Run in-place 1D C2C FFT using cuFFTDx.");
+    m.def("fft_c2c_1d",  &fft_c2c_1d,  "Run in-place 1D C2C FFT using cuFFTDx.");
     m.def("ifft_c2c_1d", &ifft_c2c_1d, "Run in-place 1D C2C IFFT using cuFFTDx.");
-    m.def("fft_r2c_1d", &fft_r2c_1d, "Run out-of-place 1D R2C FFT using cuFFTDx.");
+    m.def("fft_r2c_1d",  &fft_r2c_1d,  "Run out-of-place 1D R2C FFT using cuFFTDx.");
+    m.def("ifft_c2r_1d", &ifft_c2r_1d, "Run out-of-place 1D C2R IFFT using cuFFTDx.");
 }

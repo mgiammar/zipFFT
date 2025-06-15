@@ -25,13 +25,13 @@ void block_fft_c2c_1d_kernel(typename FFT::value_type* data) {
 }
 
 // --- Launcher Definition ---
-template<unsigned int Arch, typename T, unsigned int FFTSize, bool ForwardFFT>
+template<unsigned int Arch, typename T, unsigned int FFTSize, bool IsForwardFFT>
 inline void block_fft_c2c_1d_launcher(T* data) {
     using namespace cufftdx;
 
     // Since complex input to FFT, convert vector into its scalar type
     using scalar_precision_type = example::get_scalar_component_t<T>;
-    constexpr auto fft_direction = ForwardFFT ? fft_direction::forward : fft_direction::inverse;
+    constexpr auto fft_direction = IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
 
     using FFT = decltype(
         Block() +
@@ -62,10 +62,10 @@ inline void block_fft_c2c_1d_launcher(T* data) {
 }
 
 // --- Functor for Dispatcher ---
-template<unsigned int Arch, typename T_functor, unsigned int FFTSize_functor, bool ForwardFFT_functor>
+template<unsigned int Arch, typename T_functor, unsigned int FFTSize_functor, bool IsForwardFFT_functor>
 struct fft_dispatch_functor {
     void operator()(T_functor* data) {
-        block_fft_c2c_1d_launcher<Arch, T_functor, FFTSize_functor, ForwardFFT_functor>(data);
+        block_fft_c2c_1d_launcher<Arch, T_functor, FFTSize_functor, IsForwardFFT_functor>(data);
     }
 };
 
