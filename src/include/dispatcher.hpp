@@ -73,9 +73,9 @@ namespace dispatcher {
         const auto cuda_device_arch = get_cuda_device_arch(); // Assuming get_cuda_device_arch() is defined
 
         switch (cuda_device_arch) {
-            case 700:  Functor<700, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
-            case 720:  Functor<720, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
-            case 750:  Functor<750, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            // case 700:  Functor<700, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            // case 720:  Functor<720, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
+            // case 750:  Functor<750, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
             case 800:  Functor<800, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
             case 860:  Functor<860, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
             case 870:  Functor<870, T_actual, FFTSize_actual, ForwardFFT_actual>()(data); return 0;
@@ -93,27 +93,31 @@ namespace dispatcher {
      * @brief Launcher for a templated CUDA kernel functor which takes a pointer to input and output data as arguments.
      * Determines the CUDA device architecture and calls the appropriate specialization of the functor.
      * 
-     * @tparam Functor The functor which contains the kernel to be launched.
-     * @tparam InputType Data type of the input data.
-     * @tparam OutputType Data type of the output data (could be different than InputType, but allowed to be the same).
-     * @param input Pointer to the input data, allocated on the device.
-     * @param output Pointer to the output data, allocated on the device.
+     * @tparam Functor The functor template: template<unsigned int, typename, typename, unsigned int> class.
+     * @tparam Input_T_actual The actual input data type for this invocation.
+     * @tparam Output_T_actual The actual output data type for this invocation.
+     * @tparam FFTSize_actual The actual data size for this invocation.
+     * @param input Pointer to the input data to be processed, allocated on the device.
+     * @param output Pointer to the output data to be processed, allocated on the device.
      * @return int On success, returns 0. On failure (unsupported architecture), returns 1.
      */
-    template< template <unsigned int> class Functor, typename InputType, typename OutputType>
-    inline int sm_runner_out_of_place(InputType* input, OutputType* output) {
+    template< template <unsigned int /* Arch */, typename /* Input_T_functor_type */, typename /* Output_T_functor_type */, unsigned int /* FFTSize_functor_type */> class Functor,
+              typename Input_T_actual,
+              typename Output_T_actual,
+              unsigned int FFTSize_actual >
+    inline int sm_runner_out_of_place(Input_T_actual* input, Output_T_actual* output) {
         const auto cuda_device_arch = get_cuda_device_arch();
 
         switch (cuda_device_arch) {
-            case 700:  Functor<700>()(input, output); return 0;
-            case 720:  Functor<720>()(input, output); return 0;
-            case 750:  Functor<750>()(input, output); return 0;
-            case 800:  Functor<800>()(input, output); return 0;
-            case 860:  Functor<860>()(input, output); return 0;
-            case 870:  Functor<870>()(input, output); return 0;
-            case 890:  Functor<890>()(input, output); return 0;
-            case 900:  Functor<900>()(input, output); return 0;
-            case 1200: Functor<900>()(input, output); return 0;
+            // case 700:  Functor<700>()(input, output); return 0;
+            // case 720:  Functor<720>()(input, output); return 0;
+            // case 750:  Functor<750>()(input, output); return 0;
+            case 800:  Functor<800, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
+            case 860:  Functor<860, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
+            case 870:  Functor<870, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
+            case 890:  Functor<890, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
+            case 900:  Functor<900, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
+            case 1200: Functor<900, Input_T_actual, Output_T_actual, FFTSize_actual>()(input, output); return 0;
         }
         return 1; // Unsupported architecture
     }

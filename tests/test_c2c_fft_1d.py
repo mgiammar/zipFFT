@@ -1,7 +1,9 @@
-"""Simple 1D FFT executing tests for the cuFFTDx backend comparing against PyTorch."""
+"""Simple complex-to-complex 1D FFT tests for cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
 from zipfft import zipfft_binding
+
+import pytest
 
 FFT_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 FFT_DTYPES = [torch.complex64]
@@ -50,15 +52,15 @@ def run_inverse_fft_test(fft_size: int, dtype: torch.dtype = torch.complex64):
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
 
-def test_fft_c2c_1d():
-    """Runs a series of forward FFT tests for various sizes and data types."""
-    for fft_size in FFT_SIZES:
-        for dtype in FFT_DTYPES:
-            run_forward_fft_test(fft_size, dtype)
+@pytest.mark.parametrize("fft_size", FFT_SIZES)
+@pytest.mark.parametrize("dtype", FFT_DTYPES)
+def test_fft_c2c_1d(fft_size, dtype):
+    """Test forward FFT for specific size and dtype."""
+    run_forward_fft_test(fft_size, dtype)
 
 
-def test_ifft_c2c_1d():
-    """Runs a series of inverse FFT tests for various sizes and data types."""
-    for fft_size in FFT_SIZES:
-        for dtype in FFT_DTYPES:
-            run_inverse_fft_test(fft_size, dtype)
+@pytest.mark.parametrize("fft_size", FFT_SIZES)
+@pytest.mark.parametrize("dtype", FFT_DTYPES)
+def test_ifft_c2c_1d(fft_size, dtype):
+    """Test inverse FFT for specific size and dtype."""
+    run_inverse_fft_test(fft_size, dtype)
