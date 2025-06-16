@@ -26,8 +26,8 @@ setup(
             name="zipfft.zipfft_binding",
             sources=[
                 "src/cuda/zipfft_binding.cu",
-                "src/cuda/fft_c2c_1d.cu",
-                "src/cuda/fft_r2c_1d.cu",
+                "src/cuda/complex_fft_1d.cu",
+                "src/cuda/real_fft_1d.cu",
             ],
             include_dirs=[
                 pybind11.get_include(),

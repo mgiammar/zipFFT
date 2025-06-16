@@ -7,8 +7,8 @@
 
 #include <cufftdx.hpp>
 
-#include "../include/fft_c2c_1d.cuh"
-#include "../include/fft_r2c_1d.cuh"
+#include "../include/complex_fft_1d.cuh"
+#include "../include/real_fft_1d.cuh"
 
 
 void fft_c2c_1d(torch::Tensor input) {

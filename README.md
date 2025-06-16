@@ -78,7 +78,7 @@ pip install -e .
 
 The zipFFT backend is heavily templated C++/CUDA code which can be hard to parse at times.
 These template constructions do permit reuse of kernels and launcher functions.
-For example, the `zipfft.zipfft_binding.fft_c2c_1d` just calls one of the template instantiations at the bottom of [`src/cuda/src/cuda/fft_c2c_1d.cu`](src/cuda/fft_c2c_1d.cu).
+For example, the `zipfft.zipfft_binding.fft_c2c_1d` just calls one of the template instantiations at the bottom of [`src/cuda/src/cuda/complex_fft_1d.cu`](src/cuda/complex_fft_1d.cu).
 <!-- Adding a new compiled FFT size would simply be a new line at the bottom of this file, for example a 2048-point FFT:
 ```c++
 // ... existing code
