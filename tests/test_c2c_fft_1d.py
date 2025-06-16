@@ -4,9 +4,30 @@ import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported 
 from zipfft import zipfft_binding
 
 import pytest
+import json
+import os
 
-FFT_SIZES = [16, 32, 64, 128, 256, 512, 1024]
-FFT_DTYPES = [torch.complex64]
+
+# Load FFT config from JSON file
+FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../fft_sizes_config.json")
+TYPE_MAP = {
+    "float16": torch.float16,
+    "float32": torch.float32,
+    "float64": torch.float64,
+    "complex32": torch.complex32,
+    "complex64": torch.complex64,
+    "complex128": torch.complex128,
+}
+
+with open(FFT_CONFIG_PATH, "r") as f:
+    config = json.load(f)
+
+FORWARD_FFT_SIZES = config["forward_fft_c2c_1d"]["fft_sizes"]
+FORWARD_FFT_TYPES = [TYPE_MAP[x] for x in config["forward_fft_c2c_1d"]["fft_types"]]
+
+INVERSE_FFT_SIZES = config["inverse_fft_c2c_1d"]["fft_sizes"]
+INVERSE_FFT_TYPES = [TYPE_MAP[x] for x in config["inverse_fft_c2c_1d"]["fft_types"]]
+
 
 
 def run_forward_fft_test(fft_size: int, dtype: torch.dtype = torch.complex64):
@@ -52,15 +73,15 @@ def run_inverse_fft_test(fft_size: int, dtype: torch.dtype = torch.complex64):
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
 
-@pytest.mark.parametrize("fft_size", FFT_SIZES)
-@pytest.mark.parametrize("dtype", FFT_DTYPES)
+@pytest.mark.parametrize("fft_size", FORWARD_FFT_SIZES)
+@pytest.mark.parametrize("dtype", FORWARD_FFT_TYPES)
 def test_fft_c2c_1d(fft_size, dtype):
     """Test forward FFT for specific size and dtype."""
     run_forward_fft_test(fft_size, dtype)
 
 
-@pytest.mark.parametrize("fft_size", FFT_SIZES)
-@pytest.mark.parametrize("dtype", FFT_DTYPES)
+@pytest.mark.parametrize("fft_size", INVERSE_FFT_SIZES)
+@pytest.mark.parametrize("dtype", INVERSE_FFT_TYPES)
 def test_ifft_c2c_1d(fft_size, dtype):
     """Test inverse FFT for specific size and dtype."""
     run_inverse_fft_test(fft_size, dtype)

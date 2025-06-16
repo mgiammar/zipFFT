@@ -60,8 +60,9 @@ PyTorch built with CUDA version 12.8 is required to compile the backend function
 python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
-The package is then installable from source. Assuming you have cloned and navigated to the repo root directory, run
+The package is then installable from source. Assuming you have cloned and navigated to the repo root directory, run the following to generate the pre-defined FFT implementation files and install the package under the current environment.
 ```bash
+python generate_fft_configs.py
 pip install -e .
 ```
 
@@ -78,7 +79,7 @@ pip install -e .
 The zipFFT backend is heavily templated C++/CUDA code which can be hard to parse at times.
 These template constructions do permit reuse of kernels and launcher functions.
 For example, the `zipfft.zipfft_binding.fft_c2c_1d` just calls one of the template instantiations at the bottom of [`src/cuda/src/cuda/fft_c2c_1d.cu`](src/cuda/fft_c2c_1d.cu).
-Adding a new compiled FFT size would simply be a new line at the bottom of this file, for example a 2048-point FFT:
+<!-- Adding a new compiled FFT size would simply be a new line at the bottom of this file, for example a 2048-point FFT:
 ```c++
 // ... existing code
 
@@ -87,9 +88,10 @@ template int block_fft_c2c_1d<float2, 1024u>(float2* data);
 /* new */ template int block_fft_c2c_1d<float2, 2048u >(float2* data);
 
 // ... existing code
-```
+``` -->
 
 Each kernel type (e.g. 1D FFT, 2D FFT, padded FFT kernels) are each contained within their own .cu file and exposed with a header into C++ land.
+There is the script [`generate_fft_configs.py`](generate_fft_configs.py) which auto-generates these template implementations.
 
 Many of the functional headers included in this library come directly from the CUDALibaraySamples repository or have been adapted therefrom.
 

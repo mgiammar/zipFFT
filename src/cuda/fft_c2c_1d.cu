@@ -81,10 +81,7 @@ struct fft_dispatch_functor {
  */
 template <typename T, unsigned int FFTSize>
 int block_fft_c2c_1d(T* data) {
-    static_assert(std::is_same_v<T, float2>, "block_fft_c2c_1d: Only float2 type is currently supported.");
-    static_assert(FFTSize == 16 || FFTSize == 32 || FFTSize == 64 || FFTSize == 128 || 
-                  FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
-                  "block_fft_c2c_1d: FFTSize must be 16, 32, 64, 128, 256, 512, or 1024.");
+#include "../generated/forward_fft_c2c_1d_asserts.inc"
 
     // Call the modified dispatcher with the simpler functor
     int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, true>(data);
@@ -100,10 +97,7 @@ int block_fft_c2c_1d(T* data) {
 
 template <typename T, unsigned int FFTSize>
 int block_ifft_c2c_1d(T* data) {
-    static_assert(std::is_same_v<T, float2>, "block_ifft_c2c_1d: Only float2 type is currently supported.");
-    static_assert(FFTSize == 16 || FFTSize == 32 || FFTSize == 64 || FFTSize == 128 || 
-                  FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
-                  "block_ifft_c2c_1d: FFTSize must be 16, 32, 64, 128, 256, 512, or 1024.");
+#include "../generated/inverse_fft_c2c_1d_asserts.inc"
 
     // Call the modified dispatcher with the simpler functor
     int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, false>(data);
@@ -117,25 +111,10 @@ int block_ifft_c2c_1d(T* data) {
     return result;
 }
 
-// --- Explicit Template Instantiations ---
+// --- Template Instantiations ---
 // Each of these instantiations corresponds to a pre-compiled version of the FFT
 // for that data type and size since cuFFTDx needs to know the exact type and
 // size of the FFT at compile time.
-//
-// TODO: Expand these templated instantiations to cover more useful sizes/types
-//       maybe using a macro to generate them automatically? 
-template int block_fft_c2c_1d<float2, 16u  >(float2* data);
-template int block_fft_c2c_1d<float2, 32u  >(float2* data);
-template int block_fft_c2c_1d<float2, 64u  >(float2* data);
-template int block_fft_c2c_1d<float2, 128u >(float2* data);
-template int block_fft_c2c_1d<float2, 256u >(float2* data);
-template int block_fft_c2c_1d<float2, 512u >(float2* data);
-template int block_fft_c2c_1d<float2, 1024u>(float2* data);
+#include "../generated/forward_fft_c2c_1d_impl.inc"
 
-template int block_ifft_c2c_1d<float2, 16u  >(float2* data);
-template int block_ifft_c2c_1d<float2, 32u  >(float2* data);
-template int block_ifft_c2c_1d<float2, 64u  >(float2* data);
-template int block_ifft_c2c_1d<float2, 128u >(float2* data);
-template int block_ifft_c2c_1d<float2, 256u >(float2* data);
-template int block_ifft_c2c_1d<float2, 512u >(float2* data);
-template int block_ifft_c2c_1d<float2, 1024u>(float2* data);
+#include "../generated/inverse_fft_c2c_1d_impl.inc"

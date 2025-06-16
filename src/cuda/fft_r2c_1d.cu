@@ -160,14 +160,10 @@ template<typename Input_T, typename Output_T, unsigned int FFTSize, bool IsForwa
 int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // Static assertions to ensure the correct types and sizes are used
     if constexpr (IsForwardFFT) {
-        static_assert(std::is_same_v<Input_T, float>, "block_real_fft_1d: Only float input is currently supported.");
-        static_assert(std::is_same_v<Output_T, float2>, "block_real_fft_1d: Only float2 output is currently supported.");
+#include "../generated/forward_fft_r2c_1d_asserts.inc"
     } else {
-        static_assert(std::is_same_v<Input_T, float2>, "block_real_fft_1d: Only float2 input is currently supported.");
-        static_assert(std::is_same_v<Output_T, float>, "block_real_fft_1d: Only float output is currently supported.");
+#include "../generated/inverse_fft_c2r_1d_asserts.inc"
     }
-    static_assert(FFTSize == 16 || FFTSize == 32 || FFTSize == 64 || FFTSize == 128 || FFTSize == 256 || FFTSize == 512 || FFTSize == 1024,
-                  "block_fft_r2c_1d: Only FFT sizes of 16, 32, 64, 128, 256, 512, or 1024 are currently supported.");
 
     // Call the modified dispatcher which determined the architecture
     int result = dispatcher::sm_runner_out_of_place<fft_dispatch_functor, Input_T, Output_T, FFTSize, IsForwardFFT>(input_data, output_data);
@@ -182,21 +178,9 @@ int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
 }
 
 
-// --- Explicit Template Instantiations ---
+// --- Template Instantiations ---
 // real-to-complex
-template int block_real_fft_1d<float, float2, 16, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 32, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 64, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 128, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 256, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 512, true>(float*, float2*);
-template int block_real_fft_1d<float, float2, 1024, true>(float*, float2*);
+#include "../generated/forward_fft_r2c_1d_impl.inc"
 
 // complex-to-real
-template int block_real_fft_1d<float2, float, 16, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 32, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 64, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 128, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 256, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 512, false>(float2*, float*);
-template int block_real_fft_1d<float2, float, 1024, false>(float2*, float*);
+#include "../generated/inverse_fft_c2r_1d_impl.inc"

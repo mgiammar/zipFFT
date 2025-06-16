@@ -21,15 +21,7 @@ void fft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:   block_fft_c2c_1d<float2, 16  >(data_ptr); break;
-        case 32:   block_fft_c2c_1d<float2, 32  >(data_ptr); break;
-        case 64:   block_fft_c2c_1d<float2, 64  >(data_ptr); break;
-        case 128:  block_fft_c2c_1d<float2, 128 >(data_ptr); break;
-        case 256:  block_fft_c2c_1d<float2, 256 >(data_ptr); break;
-        case 512:  block_fft_c2c_1d<float2, 512 >(data_ptr); break;
-        case 1024: block_fft_c2c_1d<float2, 1024>(data_ptr); break;
-        default:
-            TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
+        #include "../generated/forward_fft_c2c_1d_cases.inc"
     }
 }
 
@@ -43,15 +35,7 @@ void ifft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:   block_ifft_c2c_1d<float2, 16  >(data_ptr); break;
-        case 32:   block_ifft_c2c_1d<float2, 32  >(data_ptr); break;
-        case 64:   block_ifft_c2c_1d<float2, 64  >(data_ptr); break;
-        case 128:  block_ifft_c2c_1d<float2, 128 >(data_ptr); break;
-        case 256:  block_ifft_c2c_1d<float2, 256 >(data_ptr); break;
-        case 512:  block_ifft_c2c_1d<float2, 512 >(data_ptr); break;
-        case 1024: block_ifft_c2c_1d<float2, 1024>(data_ptr); break;
-        default:
-            TORCH_CHECK(false, "Unsupported IFFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
+        #include "../generated/inverse_fft_c2c_1d_cases.inc"
     }
 }
 
@@ -72,15 +56,7 @@ void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:   block_real_fft_1d<float, float2, 16,   true>(input_ptr, output_ptr); break;
-        case 32:   block_real_fft_1d<float, float2, 32,   true>(input_ptr, output_ptr); break;
-        case 64:   block_real_fft_1d<float, float2, 64,   true>(input_ptr, output_ptr); break;
-        case 128:  block_real_fft_1d<float, float2, 128,  true>(input_ptr, output_ptr); break;
-        case 256:  block_real_fft_1d<float, float2, 256,  true>(input_ptr, output_ptr); break;
-        case 512:  block_real_fft_1d<float, float2, 512,  true>(input_ptr, output_ptr); break;
-        case 1024: block_real_fft_1d<float, float2, 1024, true>(input_ptr, output_ptr); break;
-        default:
-            TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
+        #include "../generated/forward_fft_r2c_1d_cases.inc"
     }
 }
 
@@ -101,15 +77,7 @@ void ifft_c2r_1d(torch::Tensor input, torch::Tensor output) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        case 16:   block_real_fft_1d<float2, float, 16,   false>(input_ptr, output_ptr); break;
-        case 32:   block_real_fft_1d<float2, float, 32,   false>(input_ptr, output_ptr); break;
-        case 64:   block_real_fft_1d<float2, float, 64,   false>(input_ptr, output_ptr); break;
-        case 128:  block_real_fft_1d<float2, float, 128,  false>(input_ptr, output_ptr); break;
-        case 256:  block_real_fft_1d<float2, float, 256,  false>(input_ptr, output_ptr); break;
-        case 512:  block_real_fft_1d<float2, float, 512,  false>(input_ptr, output_ptr); break;
-        case 1024: block_real_fft_1d<float2, float, 1024, false>(input_ptr, output_ptr); break;
-        default:
-            TORCH_CHECK(false, "Unsupported FFT size: " + std::to_string(fft_size) + ". Supported sizes are: 16, 32, 64, 128, 256, 512, 1024");
+        #include "../generated/inverse_fft_c2r_1d_cases.inc"
     }
 }
 

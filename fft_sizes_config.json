@@ -1,0 +1,30 @@
+{
+        "forward_fft_c2c_1d": {
+            "function_name": "block_fft_c2c_1d",
+            "fft_sizes": [64, 128, 256, 512, 1024, 2048, 4096],
+            "fft_types": ["complex64"],
+            "is_inplace_fft": true,
+            "is_forward_fft": true
+        },
+        "inverse_fft_c2c_1d": {
+            "function_name": "block_ifft_c2c_1d",
+            "fft_sizes": [64, 128, 256, 512, 1024, 2048, 4096],
+            "fft_types": ["complex64"],
+            "is_inplace_fft": true,
+            "is_forward_fft": false
+        },
+        "forward_fft_r2c_1d": {
+            "function_name": "block_real_fft_1d",
+            "fft_sizes": [64, 128, 256, 512, 1024, 2048, 4096],
+            "fft_types": [["float32", "complex64"]],
+            "is_inplace_fft": false,
+            "is_forward_fft": true
+        },
+        "inverse_fft_c2r_1d": {
+            "function_name": "block_real_fft_1d",
+            "fft_sizes": [64, 128, 256, 512, 1024, 2048, 4096],
+            "fft_types": [["complex64", "float32"]],
+            "is_inplace_fft": false,
+            "is_forward_fft": false
+        }
+    }
