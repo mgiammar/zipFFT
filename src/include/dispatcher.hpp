@@ -136,6 +136,52 @@ namespace dispatcher {
     }
 
     /**
+     * @brief Launcher for a templated CUDA kernel functor for a padded cuFFTDx
+     * kernel (which needs to know both the FFT size and signal size) and takes
+     * a pointer to input and output data as arguments.
+     * Determines the CUDA device architecture and calls the appropriate
+     * specialization of the functor.
+     * 
+     * @tparam Functor The functor template: template<unsigned int, typename, typename, unsigned int> class.
+     * @tparam Input_T_actual The actual input data type for this invocation.
+     * @tparam Output_T_actual The actual output data type for this invocation.
+     * @tparam FFTSize_actual The actual data size for this invocation.
+     * @tparam IsForwardFFT_actual Whether the functor is for a forward FFT (true) or inverse FFT (false).
+     * @param input Pointer to the input data to be processed, allocated on the device.
+     * @param output Pointer to the output data to be processed, allocated on the device.
+     * @return int On success, returns 0. On failure (unsupported architecture), returns 1.
+     */
+    template< template <
+            unsigned int, // Arch
+            typename,     // Input_T_functor_type
+            typename,     // Output_T_functor_type
+            unsigned int, // SignalLength_functor_type
+            unsigned int, // FFTSize_functor_type
+            bool>         // IsForwardFFT_functor_type
+        class        Functor,
+        typename     Input_T_actual,
+        typename     Output_T_actual,
+        unsigned int SignalLength_actual,
+        unsigned int FFTSize_actual,
+        bool         IsForwardFFT_actual >
+    inline int sm_runner_padded_out_of_place(Input_T_actual* input, Output_T_actual* output) {
+        const auto cuda_device_arch = get_cuda_device_arch();
+
+        switch (cuda_device_arch) {
+            // case 700:  Functor<700>()(input, output); return 0;
+            // case 720:  Functor<720>()(input, output); return 0;
+            // case 750:  Functor<750>()(input, output); return 0;
+            case 800:  Functor<800, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+            case 860:  Functor<860, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+            case 870:  Functor<870, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+            case 890:  Functor<890, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+            case 900:  Functor<900, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+            case 1200: Functor<900, Input_T_actual, Output_T_actual, SignalLength_actual, FFTSize_actual, IsForwardFFT_actual>()(input, output); return 0;
+        }
+        return 1; // Unsupported architecture
+    }
+
+    /**
      * @brief Launcher for a templated convolution CUDA kernel functor which takes input, kernel, and output pointers as arguments.
      * 
      * @tparam Functor 

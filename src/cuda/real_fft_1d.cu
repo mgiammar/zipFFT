@@ -15,9 +15,9 @@
  * @tparam ScalarType The real-valued (scalar component) data type for the FFT
  */
 template<
-    class FFT,
-    class ComplexType = typename FFT::value_type,
-    class ScalarType  = typename ComplexType::value_type>
+    class    FFT,
+    typename ComplexType = typename FFT::value_type,
+    typename ScalarType  = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
 void block_fft_r2c_1d_kernel(ScalarType* input_data, ComplexType* output_data) {
     using complex_type = ComplexType;
@@ -46,9 +46,9 @@ void block_fft_r2c_1d_kernel(ScalarType* input_data, ComplexType* output_data) {
  * @tparam ScalarType The real-valued (scalar component) data type for the FFT
  */
 template<
-    class FFT,
-    class ComplexType = typename FFT::value_type,
-    class ScalarType  = typename ComplexType::value_type>
+    class    FFT,
+    typename ComplexType = typename FFT::value_type,
+    typename ScalarType  = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
 void block_fft_c2r_1d_kernel(ComplexType* input_data, ScalarType* output_data) {
     using complex_type = ComplexType;
@@ -101,7 +101,7 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
     );
 
     using complex_type = typename FFT::value_type;
-    using scalar_type = typename complex_type::value_type;
+    using scalar_type  = typename complex_type::value_type;
 
     // Compile-time branching to determine which FFT kernel to use
     if constexpr (IsForwardFFT) {

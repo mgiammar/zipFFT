@@ -1,0 +1,193 @@
+#include <cuda_runtime_api.h>
+#include <cufftdx.hpp>
+
+#include "../include/block_io.hpp"
+#include "../include/padded_io.hpp"
+#include "../include/common.hpp"
+#include "../include/dispatcher.hpp"
+
+
+template<
+    int      SignalLength,  // How many elements are actually in the input_data
+    class    FFT,
+    typename ComplexType = typename FFT::value_type,
+    typename ScalarType  = typename ComplexType::value_type>
+__launch_bounds__(FFT::max_threads_per_block) __global__
+void padded_block_fft_r2c_1d_kernel(ScalarType* input_data, ComplexType* output_data) {
+    using complex_type = typename FFT::value_type;
+    using scalar_type  = typename complex_type::value_type;
+
+    // Determine weather padding is necessary based on the SignalLength
+    // and FFT size, then deciding which I/O namespace to use
+    // NOTE: This does not handle the case where SignalLength is larger!
+    constexpr bool needs_padding = (SignalLength != cufftdx::size_of<FFT>::value);
+    using input_utils  = std::conditional_t<needs_padding, example::io_padded<FFT, SignalLength>, example::io<FFT>>;
+    using output_utils = std::conditional_t<needs_padding, example::io_padded<FFT, SignalLength>, example::io<FFT>>;
+
+    // Local array for thread
+    complex_type thread_data[FFT::storage_size];
+
+    // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
+    // then load data from global memory to registers
+    const unsigned int local_fft_id = threadIdx.y;
+    input_utils::load(input_data, thread_data, local_fft_id);
+
+    // Execute FFT
+    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+    FFT().execute(thread_data, shared_mem);
+
+    // Save results
+    output_utils::store(thread_data, output_data, local_fft_id);
+}
+
+
+template<
+    int      SignalLength,  // How many elements are actually in the input_data
+    class    FFT,
+    typename ComplexType = typename FFT::value_type,
+    typename ScalarType  = typename ComplexType::value_type>
+__launch_bounds__(FFT::max_threads_per_block) __global__
+void padded_block_fft_c2r_1d_kernel(ComplexType* input_data, ScalarType* output_data) {
+    using complex_type = typename FFT::value_type;
+    using scalar_type  = typename complex_type::value_type;
+
+    // Determine weather padding is necessary based on the SignalLength
+    // and FFT size, then deciding which I/O namespace to use
+    // NOTE: This does not handle the case where SignalLength is larger!
+    constexpr bool needs_padding = (SignalLength != cufftdx::size_of<FFT>::value);
+    using input_utils  = std::conditional_t<needs_padding, example::io_padded<FFT, SignalLength>, example::io<FFT>>;
+    using output_utils = std::conditional_t<needs_padding, example::io_padded<FFT, SignalLength>, example::io<FFT>>;
+
+    // Local array for thread
+    complex_type thread_data[FFT::storage_size];
+
+    // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
+    // then load data from global memory to registers
+    const unsigned int local_fft_id = threadIdx.y;
+    input_utils::load(input_data, thread_data, local_fft_id);
+
+    // Execute FFT
+    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+    FFT().execute(thread_data, shared_mem);
+
+    // Save results
+    output_utils::store(thread_data, output_data, local_fft_id);
+}
+
+
+// --- Unified Launcher Definition (for both padded r2c & c2r) ---
+template<
+    unsigned int Arch,
+    typename     Input_T,
+    typename     Output_T,
+    unsigned int SignalLength,
+    unsigned int FFTSize,
+    bool         IsForwardFFT>
+inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_data) {
+    using namespace cufftdx;
+
+    // Real FFT specific data layout properties
+    using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
+    using scalar_precision_type = std::conditional_t<IsForwardFFT, Input_T, Output_T>;
+
+    // Conditional statements are used to determine the FFT traits
+    // about direction and precision
+    constexpr auto fft_direction = IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
+    constexpr auto fft_type = IsForwardFFT ? fft_type::r2c : fft_type::c2r;
+
+    using FFT = decltype(
+        Block() +
+        Size<FFTSize>() +
+        Type<fft_type>() +
+        real_fft_options() +
+        Direction<fft_direction>() +
+        Precision<scalar_precision_type>() +
+        ElementsPerThread<8>() +
+        FFTsPerBlock<2>() +
+        SM<Arch>()
+    );
+
+    using complex_type = typename FFT::value_type;
+    using scalar_type  = typename complex_type::value_type;
+
+        // Compile-time branching to determine which FFT kernel to use
+        if constexpr (IsForwardFFT) {
+            // Increase shared memory size, if needed
+            CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+                padded_block_fft_r2c_1d_kernel<SignalLength, FFT>,
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                FFT::shared_memory_size
+            ));
+    
+            // Cast input data to cuFFTDx types
+            scalar_type* input_data_t  = reinterpret_cast<scalar_type*>(input_data);
+            complex_type* output_data_t = reinterpret_cast<complex_type*>(output_data);
+    
+            // Launch the kernel
+            padded_block_fft_r2c_1d_kernel<SignalLength, FFT><<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        } else {
+            // Increase shared memory size, if needed
+            CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+                padded_block_fft_c2r_1d_kernel<SignalLength, FFT>,
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                FFT::shared_memory_size
+            ));
+    
+            // Cast input data to cuFFTDx types
+            complex_type* input_data_t  = reinterpret_cast<complex_type*>(input_data);
+            scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
+    
+            // Launch the kernel
+            padded_block_fft_c2r_1d_kernel<SignalLength, FFT><<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        }
+
+    // Ensure no errors afterwards
+    CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+    CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+}
+
+
+// --- Functor for Dispatcher ---
+template<
+    unsigned int Arch,
+    typename     Input_T,
+    typename     Output_T,
+    unsigned int SignalLength,
+    unsigned int FFTSize,
+    bool         IsForwardFFT>
+struct padded_real_fft_dispatch_functor {
+    void operator()(Input_T* input_data, Output_T* output_data) {
+        padded_block_real_fft_1d_launcher<Arch, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT>(input_data, output_data);
+    }
+};
+
+// --- Public API Function Template Definition ---
+template<
+    typename Input_T,
+    typename Output_T,
+    unsigned int SignalLength,
+    unsigned int FFTSize,
+    bool IsForwardFFT>
+int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
+    // TODO: Add the static assertion checks to this file
+
+    // Call the modified dispatcher which determines the CUDA architecture
+    int result = dispatcher::sm_runner_padded_out_of_place<padded_real_fft_dispatch_functor, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT>(input_data, output_data);
+
+    // Runtime assertion that the dispatcher returned successfully
+    if (result != 0) {
+        std::cerr << "padded_block_real_fft_1d: Error in dispatcher, result code: " << result << std::endl;
+        std::exit(result);
+    }
+
+    return result;
+}
+
+
+// --- Template Instantiations ---
+template int padded_block_real_fft_1d<float, float2, 128, 256, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 128, 512, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 128, 1024, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 256, 512, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 256, 1024, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 512, 1024, true>(float* input_data, float2* output_data);
