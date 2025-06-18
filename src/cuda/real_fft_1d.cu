@@ -80,7 +80,7 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
     using namespace cufftdx;
 
     // R2C and C2R specific data layout property
-    using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::normal>;
+    using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
     using scalar_precision_type = std::conditional_t<IsForwardFFT, Input_T, Output_T>;
 
     // Conditional statements are used to determine the FFT traits
