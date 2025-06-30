@@ -69,29 +69,30 @@ namespace dispatcher {
             unsigned int, // Arch
             typename,     // T_functor_type
             unsigned int, // FFTSize_functor_type
-            bool>         // IsForwardFFT_functor_type
+            bool,         // IsForwardFFT_functor_type
+            unsigned int, // elements_per_thread_functor_type
+            unsigned int> // FFTs_per_block_functor_type
         class        Functor,
         typename     T_actual,
         unsigned int FFTSize_actual,
-        bool         IsForwardFFT_actual >
+        bool         IsForwardFFT_actual,
+        int          elements_per_thread_actual,
+        int          FFTs_per_block_actual >
     inline int sm_runner_inplace(T_actual* data) {
         const auto cuda_device_arch = get_cuda_device_arch(); // Assuming get_cuda_device_arch() is defined
 
         switch (cuda_device_arch) {
-            // case 700:  Functor<700, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            // case 720:  Functor<720, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            // case 750:  Functor<750, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 800:  Functor<800, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 860:  Functor<860, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 870:  Functor<870, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 890:  Functor<890, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 900:  Functor<900, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
-            case 1200: Functor<900, T_actual, FFTSize_actual, IsForwardFFT_actual>()(data); return 0;
+            case 800:  Functor<800, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
+            case 860:  Functor<860, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
+            case 870:  Functor<870, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
+            case 890:  Functor<890, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
+            case 900:  Functor<900, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
+            case 1200: Functor<900, T_actual, FFTSize_actual, IsForwardFFT_actual, elements_per_thread_actual, FFTs_per_block_actual>()(data); return 0;
             // Add more architectures as needed
         }
         // Consider logging or returning a more specific error for unsupported architecture
         std::cerr << "Unsupported CUDA architecture: " << cuda_device_arch << std::endl;
-        return 1; // Unsupported architecture
+        return 1;
     }
 
     /**

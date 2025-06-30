@@ -57,7 +57,7 @@ conda install nvidia/label/cuda-12.8.1::cuda-toolkit
 
 PyTorch built with CUDA version 12.8 is required to compile the backend functions
 ```bash
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 PyYAML
 ```
 
 The package is then installable from source. Assuming you have cloned and navigated to the repo root directory, run the following to generate the pre-defined FFT implementation files and install the package under the current environment.
@@ -83,9 +83,9 @@ For example, the `zipfft.zipfft_binding.fft_c2c_1d` just calls one of the templa
 ```c++
 // ... existing code
 
-template int block_fft_c2c_1d<float2, 512u >(float2* data);
-template int block_fft_c2c_1d<float2, 1024u>(float2* data);
-/* new */ template int block_fft_c2c_1d<float2, 2048u >(float2* data);
+template int block_complex_fft_1d<float2, 512u >(float2* data);
+template int block_complex_fft_1d<float2, 1024u>(float2* data);
+/* new */ template int block_complex_fft_1d<float2, 2048u >(float2* data);
 
 // ... existing code
 ``` -->

@@ -22,7 +22,7 @@ void fft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        #include "../generated/forward_fft_c2c_1d_cases.inc"
+        #include "../generated/fwd_fft_c2c_1d_binding_cases.inc"
     }
 }
 
@@ -36,7 +36,7 @@ void ifft_c2c_1d(torch::Tensor input) {
 
     // Using a switch statement to handle the pre-defined FFT sizes
     switch (fft_size) {
-        #include "../generated/inverse_fft_c2c_1d_cases.inc"
+        #include "../generated/inv_fft_c2c_1d_binding_cases.inc"
     }
 }
 
