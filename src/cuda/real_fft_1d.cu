@@ -160,9 +160,9 @@ template<typename Input_T, typename Output_T, unsigned int FFTSize, bool IsForwa
 int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // Static assertions to ensure the correct types and sizes are used
     if constexpr (IsForwardFFT) {
-#include "../generated/forward_fft_r2c_1d_asserts.inc"
+#include "../generated/fwd_fft_r2c_1d_assertions.inc"
     } else {
-#include "../generated/inverse_fft_c2r_1d_asserts.inc"
+#include "../generated/inv_fft_c2r_1d_assertions.inc"
     }
 
     // Call the modified dispatcher which determined the architecture
@@ -180,7 +180,7 @@ int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
 
 // --- Template Instantiations ---
 // real-to-complex
-#include "../generated/forward_fft_r2c_1d_impl.inc"
+#include "../generated/fwd_fft_r2c_1d_implementations.inc"
 
 // complex-to-real
-#include "../generated/inverse_fft_c2r_1d_impl.inc"
+#include "../generated/inv_fft_c2r_1d_implementations.inc"

@@ -1,15 +1,14 @@
-"""Simple real-to-complex 1D FFT tests for the cuFFTDx comparing against PyTorch."""
+"""Simple complex-to-real 1D FFT tests for the cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
 from zipfft import zipfft_binding
 
 import pytest
-import json
+import yaml
 import os
 
-
-# Load FFT config from JSON file
-FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../fft_sizes_config.json")
+# Load FFT config from YAML file
+FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../configs/fft_r2c_1d.yaml")
 TYPE_MAP = {
     "float16": torch.float16,
     "float32": torch.float32,
@@ -20,23 +19,28 @@ TYPE_MAP = {
 }
 
 with open(FFT_CONFIG_PATH, "r") as f:
-    config = json.load(f)
+    config_list = yaml.safe_load(f)
 
-INVERSE_FFT_SIZES = config["inverse_fft_c2r_1d"]["fft_sizes"]
-INVERSE_FFT_TYPES = [
-    TYPE_MAP[x] for (_, x) in config["inverse_fft_c2r_1d"]["fft_types"]
-]
+# Parse inverse FFT (C2R) configurations
+inverse_configs = [cfg for cfg in config_list if not cfg["is_forward_fft"]]
+
+# Extract unique sizes and types for inverse FFTs
+INVERSE_FFT_SIZES = sorted(set(cfg["fft_size"] for cfg in inverse_configs))
+INVERSE_FFT_TYPES = sorted(
+    set(TYPE_MAP[cfg["output_data_type"]] for cfg in inverse_configs),
+    key=lambda x: str(x)
+)
 
 
 def run_inverse_rfft_test(fft_size: int, dtype: torch.dtype = torch.float32):
-    """Runs a single forward FFT test for a given size and dtype.
+    """Runs a single inverse FFT test for a given size and dtype.
 
     Parameters
     ----------
     fft_size : int
         The size of the FFT to run.
     dtype : torch.dtype, optional
-        The data type of the input tensor, by default torch.float32.
+        The data type of the output tensor, by default torch.float32.
     """
     if dtype is torch.float16:
         complex_dtype = torch.complex32
@@ -65,5 +69,5 @@ def run_inverse_rfft_test(fft_size: int, dtype: torch.dtype = torch.float32):
 @pytest.mark.parametrize("fft_size", INVERSE_FFT_SIZES)
 @pytest.mark.parametrize("dtype", INVERSE_FFT_TYPES)
 def test_fft_c2r_1d(fft_size, dtype):
-    """Test forward FFT for specific size and dtype."""
+    """Test inverse FFT for specific size and dtype."""
     run_inverse_rfft_test(fft_size, dtype)

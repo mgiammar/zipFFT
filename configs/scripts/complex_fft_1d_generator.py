@@ -12,24 +12,27 @@ from base_config import (
 STATIC_ASSERT_FFT_SIZE_MESSAGE = "Unsupported FFT size"
 STATIC_ASSERT_TYPE_MESSAGE = "Unsupported input data type"
 
-# TODO: somehow group the forward and inverse FFT configs together
-
 
 class ComplexToComplexFFT1DConfig(BaseFFT1dConfig):
     """Container class for generating C2C 1D FFT configurations.
 
-    This class handles complex-to-complex FFT configurations where:
-    - signal_length: Not used (no zero-padding)
-    - output_data_type: Not used (same as input)
+    This class handles complex-to-complex FFT configurations where the
+    following are not used:
+    - signal_length: Unused because no zero-padding is applied. Input and output are
+                     the same lengths.
+    - output_data_type: Unused because the input and output data types are the same.
 
-    Args:
-        fft_size: Size of the FFT
-        input_data_type: Input data type as string
-        is_forward_fft: True for forward FFT, False for inverse
-        elements_per_thread: Number of elements processed per thread
-        ffts_per_block: Number of FFTs per block
-        output_data_type: Unused, kept for compatibility
-        signal_length: Unused, kept for compatibility
+    Attributes
+    ----------
+    function_name: Name of the FFT function to generate. Here, it is
+        "block_complex_fft_1d".
+    fft_size: Size of the FFT
+    input_data_type: Input data type as string
+    is_forward_fft: True for forward FFT, False for inverse
+    elements_per_thread: Number of elements processed per thread
+    ffts_per_block: Number of FFTs per block
+    output_data_type: Unused, kept for compatibility
+    signal_length: Unused, kept for compatibility
     """
 
     def __init__(
@@ -42,7 +45,25 @@ class ComplexToComplexFFT1DConfig(BaseFFT1dConfig):
         output_data_type: str = None,
         signal_length: int = None,
     ):
-        """Initialize the configuration for a complex-to-complex 1D FFT."""
+        """Initialize the configuration for a complex-to-complex 1D FFT.
+
+        Parameters
+        ----------
+        fft_size : int
+            Size of the FFT.
+        input_data_type : str
+            Input data type as string.
+        is_forward_fft : bool
+            True for forward FFT, False for inverse.
+        elements_per_thread : int
+            Number of elements processed per thread.
+        ffts_per_block : int
+            Number of FFTs per block.
+        output_data_type : str, optional
+            Unused, kept for compatibility.
+        signal_length : int, optional
+            Unused, kept for compatibility.
+        """
         super().__init__(
             function_name="block_complex_fft_1d",
             signal_length=signal_length,
@@ -55,16 +76,34 @@ class ComplexToComplexFFT1DConfig(BaseFFT1dConfig):
         )
 
     def get_fft_size_assert(self) -> str:
-        """Generate FFT size assertion condition."""
+        """Generate FFT size assertion condition.
+
+        Returns
+        -------
+        str
+            Assertion string for FFT size.
+        """
         return f"FFTSize == {self.fft_size}"
 
     def get_input_data_type_assert(self) -> str:
-        """Generate input data type assertion condition."""
+        """Generate input data type assertion condition.
+
+        Returns
+        -------
+        str
+            Assertion string for input data type.
+        """
         cuda_type = type_str_to_cuda_type(self.input_data_type)
         return f"std::is_same_v<T, {cuda_type}>"
 
     def get_template_instantiation(self) -> str:
-        """Generate template instantiation string for the FFT function."""
+        """Generate template instantiation string for the FFT function.
+
+        Returns
+        -------
+        str
+            Template instantiation string.
+        """
         cuda_type = type_str_to_cuda_type(self.input_data_type)
         fwd_inv_param = "true" if self.is_forward_fft else "false"
 
@@ -74,13 +113,24 @@ class ComplexToComplexFFT1DConfig(BaseFFT1dConfig):
             f"({cuda_type}* data);"
         )
 
-    # Unused methods - kept for base class compatibility
     def get_signal_length_assert(self) -> str:
-        """Generate signal length assertion (unused for C2C FFT)."""
+        """Generate signal length assertion (unused for C2C FFT).
+
+        Returns
+        -------
+        str
+            Empty string.
+        """
         return ""
 
     def get_output_data_type_assert(self) -> str:
-        """Generate output data type assertion (unused for C2C FFT)."""
+        """Generate output data type assertion (unused for C2C FFT).
+
+        Returns
+        -------
+        str
+            Empty string.
+        """
         return ""
 
 
@@ -91,20 +141,22 @@ class ComplexToComplexFFT1DGenerator:
     and generates various code artifacts including CUDA static asserts,
     template instantiations, and Python binding switch statements.
 
-    Attributes:
-        config_list: List of ComplexToComplexFFT1DConfig instances
-        fwd_implementations_file: File name (path) to output the template instantiations
-            for the forward FFT implementations.
-        inv_implementations_file: File name (path) to output the template instantiations
-            for the inverse FFT implementations.
-        fwd_static_assertions_file: File name (path) to output the static asserts
-            for the forward FFT implementations.
-        inv_static_assertions_file: File name (path) to output the static asserts
-            for the inverse FFT implementations.
-        fwd_binding_cases_file: File name (path) to output the Python binding switch cases
-            for the forward FFT implementations.
-        inv_binding_cases_file: File name (path) to output the Python binding switch cases
-            for the inverse FFT implementations.
+    Attributes
+    ----------
+    config_list : list of ComplexToComplexFFT1DConfig
+        List of ComplexToComplexFFT1DConfig instances.
+    fwd_implementations_file : str
+        File name (path) to output the template instantiations for the forward FFT implementations.
+    inv_implementations_file : str
+        File name (path) to output the template instantiations for the inverse FFT implementations.
+    fwd_static_assertions_file : str
+        File name (path) to output the static asserts for the forward FFT implementations.
+    inv_static_assertions_file : str
+        File name (path) to output the static asserts for the inverse FFT implementations.
+    fwd_binding_cases_file : str
+        File name (path) to output the Python binding switch cases for the forward FFT implementations.
+    inv_binding_cases_file : str
+        File name (path) to output the Python binding switch cases for the inverse FFT implementations.
     """
 
     config_list: list[ComplexToComplexFFT1DConfig]
@@ -132,8 +184,22 @@ class ComplexToComplexFFT1DGenerator:
     ):
         """Initialize the generator with a list of configurations.
 
-        Args:
-            config_list: List of ComplexToComplexFFT1DConfig instances
+        Parameters
+        ----------
+        config_list : list of ComplexToComplexFFT1DConfig
+            List of ComplexToComplexFFT1DConfig instances.
+        fwd_implementations_file : str, optional
+            Path to output file for forward FFT implementations. If None, uses default path.
+        inv_implementations_file : str, optional
+            Path to output file for inverse FFT implementations. If None, uses default path.
+        fwd_static_assertions_file : str, optional
+            Path to output file for forward FFT static assertions. If None, uses default path.
+        inv_static_assertions_file : str, optional
+            Path to output file for inverse FFT static assertions. If None, uses default path.
+        fwd_binding_cases_file : str, optional
+            Path to output file for forward FFT Python binding cases. If None, uses default path.
+        inv_binding_cases_file : str, optional
+            Path to output file for inverse FFT Python binding cases. If None, uses default path.
         """
         self.config_list = config_list
 
@@ -155,11 +221,15 @@ class ComplexToComplexFFT1DGenerator:
     ) -> list[ComplexToComplexFFT1DConfig]:
         """Filter configurations by FFT direction.
 
-        Args:
-            is_forward: True for forward FFT configs, False for inverse FFT
+        Parameters
+        ----------
+        is_forward : bool
+            True for forward FFT configs, False for inverse FFT.
 
-        Returns:
-            Filtered list of configurations
+        Returns
+        -------
+        list of ComplexToComplexFFT1DConfig
+            Filtered list of configurations.
         """
         return [
             config for config in self.config_list if config.is_forward_fft == is_forward
@@ -169,11 +239,15 @@ class ComplexToComplexFFT1DGenerator:
     def from_yaml(cls, config_yaml_path: str) -> "ComplexToComplexFFT1DGenerator":
         """Parse YAML configuration into ComplexToComplexFFT1DGenerator.
 
-        Args:
-            config_yaml_path: Path to YAML file containing configuration
+        Parameters
+        ----------
+        config_yaml_path : str
+            Path to YAML file containing configuration.
 
-        Returns:
-            ComplexToComplexFFT1DGenerator instance
+        Returns
+        -------
+        ComplexToComplexFFT1DGenerator
+            Instance of ComplexToComplexFFT1DGenerator.
         """
         with open(config_yaml_path, "r") as f:
             config_dicts = yaml.safe_load(f)
@@ -184,11 +258,15 @@ class ComplexToComplexFFT1DGenerator:
     def from_json(cls, config_json_path: str) -> "ComplexToComplexFFT1DGenerator":
         """Parse JSON configuration into ComplexToComplexFFT1DGenerator.
 
-        Args:
-            config_json_path: Path to JSON file containing configuration
+        Parameters
+        ----------
+        config_json_path : str
+            Path to JSON file containing configuration.
 
-        Returns:
-            ComplexToComplexFFT1DGenerator instance
+        Returns
+        -------
+        ComplexToComplexFFT1DGenerator
+            Instance of ComplexToComplexFFT1DGenerator.
         """
         with open(config_json_path, "r") as f:
             config_dicts = json.load(f)
@@ -199,14 +277,19 @@ class ComplexToComplexFFT1DGenerator:
     def parse_dicts(cls, config_dicts: list[dict]) -> "ComplexToComplexFFT1DGenerator":
         """Parse list of dictionaries into ComplexToComplexFFT1DGenerator.
 
-        Args:
-            config_dicts: List of configuration dictionaries
+        Parameters
+        ----------
+        config_dicts : list of dict
+            List of configuration dictionaries.
 
-        Returns:
-            ComplexToComplexFFT1DGenerator instance
+        Returns
+        -------
+        ComplexToComplexFFT1DGenerator
+            Instance of ComplexToComplexFFT1DGenerator.
 
-        Note:
-            This function does not have robust error handling or type checking.
+        Note
+        ----
+        This function does not have robust error handling or type checking.
         """
         configs = [
             ComplexToComplexFFT1DConfig(**config_dict) for config_dict in config_dicts
@@ -214,7 +297,13 @@ class ComplexToComplexFFT1DGenerator:
         return cls(configs)
 
     def _get_warning_header(self) -> str:
-        """Generate warning header for auto-generated files."""
+        """Generate warning header for auto-generated files.
+
+        Returns
+        -------
+        str
+            Warning header string.
+        """
         return (
             "// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
             "// !!! This file was auto-generated by the class   !!!\n"
@@ -228,11 +317,15 @@ class ComplexToComplexFFT1DGenerator:
     ) -> tuple[list[str], list[str]]:
         """Collect assertion conditions from given configurations.
 
-        Args:
-            configs: List of configurations to process
+        Parameters
+        ----------
+        configs : list of ComplexToComplexFFT1DConfig
+            List of configurations to process.
 
-        Returns:
-            Tuple of (fft_size_conditions, input_type_conditions)
+        Returns
+        -------
+        tuple of list of str
+            Tuple of (fft_size_conditions, input_type_conditions).
         """
         fft_size_conditions = []
         input_type_conditions = []
@@ -250,11 +343,15 @@ class ComplexToComplexFFT1DGenerator:
     def generate_cuda_static_asserts(self, is_forward: bool = True) -> str:
         """Generate CUDA static assert statements for configurations.
 
-        Args:
-            is_forward: True for forward FFT, False for inverse FFT
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward FFT, False for inverse FFT.
 
-        Returns:
-            String containing static assert statements
+        Returns
+        -------
+        str
+            String containing static assert statements.
         """
         configs = self._filter_configs_by_direction(is_forward)
         fft_size_conditions, input_type_conditions = self._collect_assert_conditions(
@@ -282,8 +379,10 @@ class ComplexToComplexFFT1DGenerator:
     def write_cuda_static_asserts(self, is_forward: bool = None) -> None:
         """Write CUDA static assert statements to files.
 
-        Args:
-            is_forward: True for forward only, False for inverse only, None for both
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward only, False for inverse only, None for both.
         """
         if is_forward is None or is_forward:
             with open(self.fwd_static_assertions_file, "w") as f:
@@ -296,11 +395,15 @@ class ComplexToComplexFFT1DGenerator:
     def generate_template_instantiations(self, is_forward: bool = True) -> str:
         """Generate template instantiation statements for configurations.
 
-        Args:
-            is_forward: True for forward FFT, False for inverse FFT
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward FFT, False for inverse FFT.
 
-        Returns:
-            String containing template instantiations
+        Returns
+        -------
+        str
+            String containing template instantiations.
         """
         configs = self._filter_configs_by_direction(is_forward)
         instantiations = [config.get_template_instantiation() for config in configs]
@@ -310,8 +413,10 @@ class ComplexToComplexFFT1DGenerator:
     def write_template_instantiations(self, is_forward: bool = None) -> None:
         """Write template instantiation statements to files.
 
-        Args:
-            is_forward: True for forward only, False for inverse only, None for both
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward only, False for inverse only, None for both.
         """
         if is_forward is None or is_forward:
             with open(self.fwd_implementations_file, "w") as f:
@@ -324,11 +429,15 @@ class ComplexToComplexFFT1DGenerator:
     def _generate_switch_case(self, config: ComplexToComplexFFT1DConfig) -> str:
         """Generate a single switch case statement for a configuration.
 
-        Args:
-            config: Configuration to generate switch case for
+        Parameters
+        ----------
+        config : ComplexToComplexFFT1DConfig
+            Configuration to generate switch case for.
 
-        Returns:
-            Switch case statement string
+        Returns
+        -------
+        str
+            Switch case statement string.
         """
         cuda_type = type_str_to_cuda_type(config.input_data_type)
         is_forward = str(config.is_forward_fft).lower()
@@ -344,11 +453,15 @@ class ComplexToComplexFFT1DGenerator:
     def _generate_default_case(self, configs: list[ComplexToComplexFFT1DConfig]) -> str:
         """Generate default case for switch statement with supported sizes.
 
-        Args:
-            configs: List of configurations to get supported sizes from
+        Parameters
+        ----------
+        configs : list of ComplexToComplexFFT1DConfig
+            List of configurations to get supported sizes from.
 
-        Returns:
-            Default case statement string
+        Returns
+        -------
+        str
+            Default case statement string.
         """
         supported_sizes = [config.fft_size for config in configs]
         supported_sizes_str = ", ".join(map(str, supported_sizes))
@@ -363,11 +476,15 @@ class ComplexToComplexFFT1DGenerator:
     def generate_python_binding_switch_statements(self, is_forward: bool = True) -> str:
         """Generate Python binding switch statements for configurations.
 
-        Args:
-            is_forward: True for forward FFT, False for inverse FFT
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward FFT, False for inverse FFT.
 
-        Returns:
-            String containing switch statement cases
+        Returns
+        -------
+        str
+            String containing switch statement cases.
         """
         configs = self._filter_configs_by_direction(is_forward)
         switch_cases = [self._generate_switch_case(config) for config in configs]
@@ -380,8 +497,10 @@ class ComplexToComplexFFT1DGenerator:
     def write_python_binding_switch_statements(self, is_forward: bool = None) -> None:
         """Write Python binding switch statements to files.
 
-        Args:
-            is_forward: True for forward only, False for inverse only, None for both
+        Parameters
+        ----------
+        is_forward : bool, optional
+            True for forward only, False for inverse only, None for both.
         """
         if is_forward is None or is_forward:
             with open(self.fwd_binding_cases_file, "w") as f:

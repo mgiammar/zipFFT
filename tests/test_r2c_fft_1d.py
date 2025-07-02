@@ -4,12 +4,11 @@ import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported 
 from zipfft import zipfft_binding
 
 import pytest
-import json
+import yaml
 import os
 
-
-# Load FFT config from JSON file
-FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../fft_sizes_config.json")
+# Load FFT config from YAML file
+FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../configs/fft_r2c_1d.yaml")
 TYPE_MAP = {
     "float16": torch.float16,
     "float32": torch.float32,
@@ -20,12 +19,17 @@ TYPE_MAP = {
 }
 
 with open(FFT_CONFIG_PATH, "r") as f:
-    config = json.load(f)
+    config_list = yaml.safe_load(f)
 
-FORWARD_FFT_SIZES = config["forward_fft_r2c_1d"]["fft_sizes"]
-FORWARD_FFT_TYPES = [
-    TYPE_MAP[x] for (x, _) in config["forward_fft_r2c_1d"]["fft_types"]
-]
+# Parse forward FFT (R2C) configurations
+forward_configs = [cfg for cfg in config_list if cfg["is_forward_fft"]]
+
+# Extract unique sizes and types for forward FFTs
+FORWARD_FFT_SIZES = sorted(set(cfg["fft_size"] for cfg in forward_configs))
+FORWARD_FFT_TYPES = sorted(
+    set(TYPE_MAP[cfg["input_data_type"]] for cfg in forward_configs),
+    key=lambda x: str(x)
+)
 
 
 def run_forward_rfft_test(fft_size: int, dtype: torch.dtype = torch.float32):
