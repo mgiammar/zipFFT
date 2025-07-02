@@ -4,6 +4,6 @@
 // !!! unless you know what you are doing.        !!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-static_assert(FFTSize == 64 || FFTSize == 128 || FFTSize == 1024 || FFTSize == 512 || FFTSize == 256 || FFTSize == 4096 || FFTSize == 2048, "Unsupported FFT size");
-static_assert(std::is_same_v<Input_T, float>, "Unsupported input/output data type (input)");
-static_assert(std::is_same_v<Output_T, float2>, "Unsupported input/output data type (output)");
+static_assert(FFTSize == 128 || FFTSize == 64 || FFTSize == 256 || FFTSize == 1024 || FFTSize == 4096 || FFTSize == 512 || FFTSize == 2048, "Unsupported FFT size");
+static_assert(std::is_same_v<Input_T, float>, "Unsupported input/output data type (input wrong type)");
+static_assert(std::is_same_v<Output_T, float2>, "Unsupported input/output data type (output wrong type)");

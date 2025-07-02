@@ -108,13 +108,13 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     case 128:
         switch (fft_size) {
             case 256:
-                padded_block_real_fft_1d<float, float2, 128, 256, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             case 512:
-                padded_block_real_fft_1d<float, float2, 128, 512, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             case 1024:
-                padded_block_real_fft_1d<float, float2, 128, 1024, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             default:
                 TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 128");
@@ -123,10 +123,10 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     case 256:
         switch (fft_size) {
             case 512:
-                padded_block_real_fft_1d<float, float2, 256, 512, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 256, 512, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             case 1024:
-                padded_block_real_fft_1d<float, float2, 256, 1024, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 256, 1024, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             default:
                 TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 256");
@@ -135,7 +135,7 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     case 512:
         switch (fft_size) {
             case 1024:
-                padded_block_real_fft_1d<float, float2, 512, 1024, true>(input_ptr, output_ptr);
+                padded_block_real_fft_1d<float, float2, 512, 1024, true, 8u, 2u>(input_ptr, output_ptr);
                 break;
             default:
                 TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 512");

@@ -51,7 +51,9 @@ class RealToComplexFFT1DConfig(BaseFFT1dConfig):
         out_type = type_str_to_cuda_type(self.output_data_type)
         fwd_inv_param = "true" if self.is_forward_fft else "false"
         return (
-            f"template int {self.function_name}<{in_type}, {out_type}, {self.fft_size}u, {fwd_inv_param}>"
+            f"template int {self.function_name}<{in_type}, {out_type}, "
+            f"{self.fft_size}u, {fwd_inv_param}, {self.elements_per_thread}u, "
+            f"{self.ffts_per_block}u>"
             f"({in_type}* input_data, {out_type}* output_data);"
         )
         
@@ -178,7 +180,8 @@ class RealToComplexFFT1DGenerator:
         is_forward = str(config.is_forward_fft).lower()
         return (
             f"case {config.fft_size}: "
-            f"{config.function_name}<{in_type}, {out_type}, {config.fft_size}u, {is_forward}>"
+            f"{config.function_name}<{in_type}, {out_type}, {config.fft_size}u, "
+            f"{is_forward}, {config.elements_per_thread}u, {config.ffts_per_block}u>"
             f"(input_ptr, output_ptr); break;"
         )
 

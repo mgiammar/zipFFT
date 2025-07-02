@@ -4,10 +4,10 @@
 // !!! unless you know what you are doing.        !!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-template int block_real_fft_1d<float, float2, 64u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 128u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 256u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 512u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 1024u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 2048u, true>(float* input_data, float2* output_data);
-template int block_real_fft_1d<float, float2, 4096u, true>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 64u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 128u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 256u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 512u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 1024u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 2048u, true, 8u, 2u>(float* input_data, float2* output_data);
+template int block_real_fft_1d<float, float2, 4096u, true, 8u, 2u>(float* input_data, float2* output_data);

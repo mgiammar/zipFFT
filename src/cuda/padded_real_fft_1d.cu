@@ -82,7 +82,9 @@ template<
     typename     Output_T,
     unsigned int SignalLength,
     unsigned int FFTSize,
-    bool         IsForwardFFT>
+    bool         IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
 inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_data) {
     using namespace cufftdx;
 
@@ -102,8 +104,8 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* out
         real_fft_options() +
         Direction<fft_direction>() +
         Precision<scalar_precision_type>() +
-        ElementsPerThread<8>() +
-        FFTsPerBlock<2>() +
+        ElementsPerThread<elements_per_thread>() +
+        FFTsPerBlock<FFTs_per_block>() +
         SM<Arch>()
     );
 
@@ -150,14 +152,24 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* out
 // --- Functor for Dispatcher ---
 template<
     unsigned int Arch,
-    typename     Input_T,
-    typename     Output_T,
-    unsigned int SignalLength,
-    unsigned int FFTSize,
-    bool         IsForwardFFT>
+    typename     Input_T_functor,
+    typename     Output_T_functor,
+    unsigned int SignalLength_functor,
+    unsigned int FFTSize_functor,
+    bool         IsForwardFFT_functor,
+    unsigned int elements_per_thread_functor,
+    unsigned int FFTs_per_block_functor>
 struct padded_real_fft_dispatch_functor {
-    void operator()(Input_T* input_data, Output_T* output_data) {
-        padded_block_real_fft_1d_launcher<Arch, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT>(input_data, output_data);
+    void operator()(Input_T_functor* input_data, Output_T_functor* output_data) {
+        padded_block_real_fft_1d_launcher<
+            Arch,
+            Input_T_functor,
+            Output_T_functor,
+            SignalLength_functor,
+            FFTSize_functor,
+            IsForwardFFT_functor,
+            elements_per_thread_functor,
+            FFTs_per_block_functor>(input_data, output_data);
     }
 };
 
@@ -167,12 +179,22 @@ template<
     typename Output_T,
     unsigned int SignalLength,
     unsigned int FFTSize,
-    bool IsForwardFFT>
+    bool IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
 int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // TODO: Add the static assertion checks to this file
 
     // Call the modified dispatcher which determines the CUDA architecture
-    int result = dispatcher::sm_runner_padded_out_of_place<padded_real_fft_dispatch_functor, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT>(input_data, output_data);
+    int result = dispatcher::sm_runner_padded_out_of_place<
+        padded_real_fft_dispatch_functor,
+        Input_T,
+        Output_T,
+        SignalLength,
+        FFTSize,
+        IsForwardFFT,
+        elements_per_thread,
+        FFTs_per_block>(input_data, output_data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {
@@ -185,9 +207,9 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
 
 
 // --- Template Instantiations ---
-template int padded_block_real_fft_1d<float, float2, 128, 256, true>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 128, 512, true>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 128, 1024, true>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 256, 512, true>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 256, 1024, true>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 512, 1024, true>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 256, 512, true, 8u, 2u>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 256, 1024, true, 8u, 2u>(float* input_data, float2* output_data);
+template int padded_block_real_fft_1d<float, float2, 512, 1024, true, 8u, 2u>(float* input_data, float2* output_data);

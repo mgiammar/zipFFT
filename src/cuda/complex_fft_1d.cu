@@ -83,8 +83,7 @@ struct fft_dispatch_functor {
             FFTSize_functor,
             IsForwardFFT_functor,
             elements_per_thread_functor,
-            FFTs_per_block_functor
-        >(data);
+            FFTs_per_block_functor>(data);
     }
 };
 
@@ -122,8 +121,7 @@ int block_complex_fft_1d(T* data) {
         FFTSize,
         IsForwardFFT,
         elements_per_thread,
-        FFTs_per_block
-    >(data);
+        FFTs_per_block>(data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {

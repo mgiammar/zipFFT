@@ -4,13 +4,13 @@
 // !!! unless you know what you are doing.        !!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-case 64: block_real_fft_1d<float2, float, 64u, false>(input_ptr, output_ptr); break;
-case 128: block_real_fft_1d<float2, float, 128u, false>(input_ptr, output_ptr); break;
-case 256: block_real_fft_1d<float2, float, 256u, false>(input_ptr, output_ptr); break;
-case 512: block_real_fft_1d<float2, float, 512u, false>(input_ptr, output_ptr); break;
-case 1024: block_real_fft_1d<float2, float, 1024u, false>(input_ptr, output_ptr); break;
-case 2048: block_real_fft_1d<float2, float, 2048u, false>(input_ptr, output_ptr); break;
-case 4096: block_real_fft_1d<float2, float, 4096u, false>(input_ptr, output_ptr); break;
+case 64: block_real_fft_1d<float2, float, 64u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 128: block_real_fft_1d<float2, float, 128u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 256: block_real_fft_1d<float2, float, 256u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 512: block_real_fft_1d<float2, float, 512u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 1024: block_real_fft_1d<float2, float, 1024u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 2048: block_real_fft_1d<float2, float, 2048u, false, 8u, 2u>(input_ptr, output_ptr); break;
+case 4096: block_real_fft_1d<float2, float, 4096u, false, 8u, 2u>(input_ptr, output_ptr); break;
 default:
     std::string supported_sizes = "[64, 128, 256, 512, 1024, 2048, 4096]";
     TORCH_CHECK(false, "Unsupported FFT size " + std::to_string(fft_size) + ", supported sizes are: " + supported_sizes);

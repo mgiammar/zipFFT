@@ -75,7 +75,9 @@ template<
     typename     Input_T,
     typename     Output_T,
     unsigned int FFTSize,
-    bool         IsForwardFFT>
+    bool         IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
 inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_data) {
     using namespace cufftdx;
 
@@ -95,8 +97,8 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
         real_fft_options() +
         Direction<fft_direction>() +
         Precision<scalar_precision_type>() +
-        ElementsPerThread<8>() +
-        FFTsPerBlock<2>() +
+        ElementsPerThread<elements_per_thread>() +
+        FFTsPerBlock<FFTs_per_block>() +
         SM<Arch>()
     );
 
@@ -148,15 +150,30 @@ template<
     typename     Input_T_functor,
     typename     Output_T_functor,
     unsigned int FFTSize_functor,
-    bool         IsForwardFFT_functor>
+    bool         IsForwardFFT_functor,
+    unsigned int elements_per_thread_functor,
+    unsigned int FFTs_per_block_functor>
 struct fft_dispatch_functor {
     void operator()(Input_T_functor* input_data, Output_T_functor* output_data) {
-        block_real_fft_1d_launcher<Arch, Input_T_functor, Output_T_functor, FFTSize_functor, IsForwardFFT_functor>(input_data, output_data);
+        block_real_fft_1d_launcher<
+            Arch,
+            Input_T_functor,
+            Output_T_functor,
+            FFTSize_functor,
+            IsForwardFFT_functor,
+            elements_per_thread_functor,
+            FFTs_per_block_functor>(input_data, output_data);
     }
 };
 
 // --- Public API Function Template Definition ---
-template<typename Input_T, typename Output_T, unsigned int FFTSize, bool IsForwardFFT>
+template<
+    typename     Input_T,
+    typename     Output_T,
+    unsigned int FFTSize,
+    bool         IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
 int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // Static assertions to ensure the correct types and sizes are used
     if constexpr (IsForwardFFT) {
@@ -166,7 +183,14 @@ int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     }
 
     // Call the modified dispatcher which determined the architecture
-    int result = dispatcher::sm_runner_out_of_place<fft_dispatch_functor, Input_T, Output_T, FFTSize, IsForwardFFT>(input_data, output_data);
+    int result = dispatcher::sm_runner_out_of_place<
+        fft_dispatch_functor,
+        Input_T,
+        Output_T,
+        FFTSize,
+        IsForwardFFT,
+        elements_per_thread,
+        FFTs_per_block>(input_data, output_data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {
