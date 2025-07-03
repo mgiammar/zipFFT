@@ -1,7 +1,7 @@
 #############################################################
-### Configurations for forward/inverse real-to-complex     ###
-### and complex-to-real 1D FFTs. These will be used with   ###
-### the RealToComplexFFT1DGenerator class.                 ###
+### Configurations for forward/inverse real-to-complex    ###
+### and complex-to-real 1D FFTs. These will be used with  ###
+### the RealToComplexFFT1DGenerator class.                ###
 #############################################################
 
 # Forward: real-to-complex (R2C)

@@ -105,45 +105,8 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     // }
   // Nested switch to handle all valid (signal_length, fft_size) combinations
   switch (signal_length) {
-    case 128:
-        switch (fft_size) {
-            case 256:
-                padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            case 512:
-                padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            case 1024:
-                padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            default:
-                TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 128");
-        }
-        break;
-    case 256:
-        switch (fft_size) {
-            case 512:
-                padded_block_real_fft_1d<float, float2, 256, 512, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            case 1024:
-                padded_block_real_fft_1d<float, float2, 256, 1024, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            default:
-                TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 256");
-        }
-        break;
-    case 512:
-        switch (fft_size) {
-            case 1024:
-                padded_block_real_fft_1d<float, float2, 512, 1024, true, 8u, 2u>(input_ptr, output_ptr);
-                break;
-            default:
-                TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length 512");
-        }
-        break;
-    default:
-        TORCH_CHECK(false, "Unsupported signal length: ", signal_length);
-}
+#include "../generated/fwd_padded_fft_r2c_1d_binding_cases.inc"
+  }
 }
 
 PYBIND11_MODULE(zipfft_binding, m) {

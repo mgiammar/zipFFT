@@ -183,7 +183,13 @@ template<
     unsigned int elements_per_thread,
     unsigned int FFTs_per_block>
 int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
-    // TODO: Add the static assertion checks to this file
+    // Throw if backward FFTs since they are not implemented yet
+    static_assert(IsForwardFFT, "Backward padded real FFTs (c2r) are not implemented yet.");
+    if constexpr (IsForwardFFT) {
+#include "../generated/fwd_padded_fft_r2c_1d_assertions.inc"
+    } else {
+
+    }
 
     // Call the modified dispatcher which determines the CUDA architecture
     int result = dispatcher::sm_runner_padded_out_of_place<
@@ -207,9 +213,5 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
 
 
 // --- Template Instantiations ---
-template int padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 256, 512, true, 8u, 2u>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 256, 1024, true, 8u, 2u>(float* input_data, float2* output_data);
-template int padded_block_real_fft_1d<float, float2, 512, 1024, true, 8u, 2u>(float* input_data, float2* output_data);
+#include "../generated/fwd_padded_fft_r2c_1d_implementations.inc"
+// #include "../generated/bwd_padded_fft_c2r_1d_implementations.inc"
