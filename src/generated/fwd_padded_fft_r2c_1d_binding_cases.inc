@@ -7,18 +7,18 @@
 switch (signal_length) {
 case 64:
     switch (fft_size) {
-        case 128: padded_block_real_fft_1d<float, float2, 64, 128, true, 8u, 2u>(input_ptr, output_ptr);
-        case 256: padded_block_real_fft_1d<float, float2, 64, 256, true, 8u, 2u>(input_ptr, output_ptr);
-        case 512: padded_block_real_fft_1d<float, float2, 64, 512, true, 8u, 2u>(input_ptr, output_ptr);
-        case 1024: padded_block_real_fft_1d<float, float2, 64, 1024, true, 8u, 2u>(input_ptr, output_ptr);
+        case 128: padded_block_real_fft_1d<float, float2, 64, 128, true, 8u, 2u>(input_ptr, output_ptr); break;
+        case 256: padded_block_real_fft_1d<float, float2, 64, 256, true, 8u, 2u>(input_ptr, output_ptr); break;
+        case 512: padded_block_real_fft_1d<float, float2, 64, 512, true, 8u, 2u>(input_ptr, output_ptr); break;
+        case 1024: padded_block_real_fft_1d<float, float2, 64, 1024, true, 8u, 2u>(input_ptr, output_ptr); break;
         default: TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length ", signal_length);
     }
     break;
 case 128:
     switch (fft_size) {
-        case 256: padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(input_ptr, output_ptr);
-        case 512: padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(input_ptr, output_ptr);
-        case 1024: padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(input_ptr, output_ptr);
+        case 256: padded_block_real_fft_1d<float, float2, 128, 256, true, 8u, 2u>(input_ptr, output_ptr); break;
+        case 512: padded_block_real_fft_1d<float, float2, 128, 512, true, 8u, 2u>(input_ptr, output_ptr); break;
+        case 1024: padded_block_real_fft_1d<float, float2, 128, 1024, true, 8u, 2u>(input_ptr, output_ptr); break;
         default: TORCH_CHECK(false, "Unsupported FFT size ", fft_size, " for signal length ", signal_length);
     }
     break;

@@ -12,11 +12,11 @@ __version__ = "0.0.1alpha"
 # fmt: off
 DEBUG_PRINT = False
 if DEBUG_PRINT:
-    print("Using pybind11 include directory:            ", pybind11.get_include())
-    print("Using torch include directory:               ", pybind11.get_include(user=True))
-    print("Using torch library directory:               ", pybind11.get_cmake_dir())
-    print("Using library dirs:                          ", torch.utils.cpp_extension.CUDA_HOME)
-    print("                                             ", torch.utils.cpp_extension.TORCH_LIB_PATH)
+    print("Using pybind11 include directory: ", pybind11.get_include())
+    print("Using torch include directory:    ", pybind11.get_include(user=True))
+    print("Using torch library directory:    ", pybind11.get_cmake_dir())
+    print("Using library dirs:               ", torch.utils.cpp_extension.CUDA_HOME)
+    print("                                  ", torch.utils.cpp_extension.TORCH_LIB_PATH)
 # fmt: on
 
 # TODO: Make this setup script more robust (plus conda recipe)

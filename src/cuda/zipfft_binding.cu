@@ -84,14 +84,14 @@ void ifft_c2r_1d(torch::Tensor input, torch::Tensor output) {
 
 void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s) {
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
-    // TORCH_CHECK(input.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
+    TORCH_CHECK(input.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
     TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
 
     TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
-    // TORCH_CHECK(output.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
+    TORCH_CHECK(output.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
     TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
 
-    // TORCH_CHECK(input.size(0) / 2 + 1 == output.size(0), "Output tensor size must be (input_size / 2 + 1)");
+    TORCH_CHECK(s / 2 + 1 == output.size(0), "Output tensor size must be (s / 2 + 1)");
 
     float*       input_ptr  = input.data_ptr<float>();
     float2*      output_ptr = reinterpret_cast<float2*>(output.data_ptr<c10::complex<float>>());
@@ -99,14 +99,8 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     unsigned int fft_size      = s;
     unsigned int signal_length = input.size(0);
 
-    // // Using a switch statement to handle the pre-defined FFT sizes
-    // switch (fft_size) {
-    //     #include "../generated/forward_fft_r2c_padded_1d_cases.inc"
-    // }
-  // Nested switch to handle all valid (signal_length, fft_size) combinations
-  switch (signal_length) {
-#include "../generated/fwd_padded_fft_r2c_1d_binding_cases.inc"
-  }
+    // Nested switch to handle all valid (signal_length, fft_size) combinations
+    #include "../generated/fwd_padded_fft_r2c_1d_binding_cases.inc"
 }
 
 PYBIND11_MODULE(zipfft_binding, m) {

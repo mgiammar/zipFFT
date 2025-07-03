@@ -186,9 +186,7 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // Throw if backward FFTs since they are not implemented yet
     static_assert(IsForwardFFT, "Backward padded real FFTs (c2r) are not implemented yet.");
     if constexpr (IsForwardFFT) {
-#include "../generated/fwd_padded_fft_r2c_1d_assertions.inc"
-    } else {
-
+        #include "../generated/fwd_padded_fft_r2c_1d_assertions.inc"
     }
 
     // Call the modified dispatcher which determines the CUDA architecture

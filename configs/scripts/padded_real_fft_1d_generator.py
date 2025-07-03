@@ -239,7 +239,7 @@ class PaddedRealToComplexFFT1dGenerator:
                     f"case {config.fft_size}: {config.function_name}<{in_type}, {out_type}, "
                     f"{config.signal_length}, {config.fft_size}, "
                     f"{is_forward_fft}, {config.elements_per_thread}u, "
-                    f"{config.ffts_per_block}u>(input_ptr, output_ptr);"
+                    f"{config.ffts_per_block}u>(input_ptr, output_ptr); break;"
                 )
 
         # Default case if no matching FFT size is found
