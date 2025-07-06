@@ -1,5 +1,6 @@
-These are auto-generated .inc files for the pre-defined FFT shapes & data types since cuFFTDx needs to know the execution shapes and types at compile time. See [generate_fft_configs.py](../../generate_fft_configs.py) and the associated config JSON files to see how these files are built.
+These are auto-generated .inc files for the pre-defined FFT shapes & data types since cuFFTDx needs to know the execution shapes and types at compile time.
+Auto-generation is used in-place of manually writing implementation code and switch statements so users can easily configure what FFT/Conv types should be compiled and to build into auto-tuning frameworks.
 
-* Extension `_impl.inc` are for CUDA template implementations
-* Extension `_assert.inc` are static assertions for CUDA files
-* Extension `_bindings.inc` are switch case statements for the Python bindings
+* Extension `_implementations.inc` are for CUDA template implementations
+* Extension `_asserts.inc` are static assertions for CUDA files
+* Extension `_binding_cases.inc` are switch case statements for the Python bindings

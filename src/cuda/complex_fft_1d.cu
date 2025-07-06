@@ -25,7 +25,13 @@ void block_fft_c2c_1d_kernel(typename FFT::value_type* data) {
 }
 
 // --- Launcher Definition ---
-template<unsigned int Arch, typename T, unsigned int FFTSize, bool IsForwardFFT>
+template<
+    unsigned int Arch,
+    typename     T,
+    unsigned int FFTSize,
+    bool         IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
 inline void block_fft_c2c_1d_launcher(T* data) {
     using namespace cufftdx;
 
@@ -39,8 +45,8 @@ inline void block_fft_c2c_1d_launcher(T* data) {
         Type<fft_type::c2c>() +
         Direction<fft_direction>() +
         Precision<scalar_precision_type>() +
-        ElementsPerThread<8>() +
-        FFTsPerBlock<2>() +
+        ElementsPerThread<elements_per_thread>() +
+        FFTsPerBlock<FFTs_per_block>() +
         SM<Arch>()
     );
 
@@ -62,10 +68,22 @@ inline void block_fft_c2c_1d_launcher(T* data) {
 }
 
 // --- Functor for Dispatcher ---
-template<unsigned int Arch, typename T_functor, unsigned int FFTSize_functor, bool IsForwardFFT_functor>
+template<
+    unsigned int Arch,
+    typename     T_functor,
+    unsigned int FFTSize_functor,
+    bool         IsForwardFFT_functor,
+    unsigned int elements_per_thread_functor,
+    unsigned int FFTs_per_block_functor>
 struct fft_dispatch_functor {
     void operator()(T_functor* data) {
-        block_fft_c2c_1d_launcher<Arch, T_functor, FFTSize_functor, IsForwardFFT_functor>(data);
+        block_fft_c2c_1d_launcher<
+            Arch,
+            T_functor,
+            FFTSize_functor,
+            IsForwardFFT_functor,
+            elements_per_thread_functor,
+            FFTs_per_block_functor>(data);
     }
 };
 
@@ -75,36 +93,39 @@ struct fft_dispatch_functor {
  * @brief Callable function to perform a 1D complex-to-complex FFT using cuFFTDx.
  * 
  * @tparam T The data type (currently must be float2).
- * @tparam FFTSize Number of elements in the data array (currently must be one of 128, 256, 512, or 1024).
+ * @tparam FFTSize Number of elements in the data array (must match supported FFT sizes).
+ * @tparam IsForwardFFT Boolean indicating whether the FFT is forward (true) or inverse (false).
+ * @tparam elements_per_thread Number of elements processed by each thread (default: 1).
+ * @tparam FFTs_per_block Number of FFTs computed per thread block (default: 1).
  * @param data The pointer to the data array containing complex numbers, allocated on device.
  * @return int Upon successful execution, returns 0. Otherwise, returns an error code.
  */
-template <typename T, unsigned int FFTSize>
-int block_fft_c2c_1d(T* data) {
-#include "../generated/forward_fft_c2c_1d_asserts.inc"
-
-    // Call the modified dispatcher with the simpler functor
-    int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, true>(data);
-
-    // Runtime assertion that the dispatcher returned successfully
-    if (result != 0) {
-        std::cerr << "block_fft_c2c_1d: Error in dispatcher, result code: " << result << std::endl;
-        std::exit(result);
+template <
+    typename     T,
+    unsigned int FFTSize,
+    bool         IsForwardFFT,
+    unsigned int elements_per_thread,
+    unsigned int FFTs_per_block>
+int block_complex_fft_1d(T* data) {
+    // Static assertions to ensure the correct types and sizes are used
+    if constexpr (IsForwardFFT) {
+#include "../generated/fwd_fft_c2c_1d_assertions.inc"
+    } else {
+#include "../generated/inv_fft_c2c_1d_assertions.inc"
     }
 
-    return result;
-}
-
-template <typename T, unsigned int FFTSize>
-int block_ifft_c2c_1d(T* data) {
-#include "../generated/inverse_fft_c2c_1d_asserts.inc"
-
-    // Call the modified dispatcher with the simpler functor
-    int result = dispatcher::sm_runner_inplace<fft_dispatch_functor, T, FFTSize, false>(data);
+    // Call the dispatcher with the functor, passing template parameters
+    int result = dispatcher::sm_runner_inplace<
+        fft_dispatch_functor,
+        T,
+        FFTSize,
+        IsForwardFFT,
+        elements_per_thread,
+        FFTs_per_block>(data);
 
     // Runtime assertion that the dispatcher returned successfully
     if (result != 0) {
-        std::cerr << "block_ifft_c2c_1d: Error in dispatcher, result code: " << result << std::endl;
+        std::cerr << "block_complex_fft_1d: Error in dispatcher, result code: " << result << std::endl;
         std::exit(result);
     }
 
@@ -115,6 +136,6 @@ int block_ifft_c2c_1d(T* data) {
 // Each of these instantiations corresponds to a pre-compiled version of the FFT
 // for that data type and size since cuFFTDx needs to know the exact type and
 // size of the FFT at compile time.
-#include "../generated/forward_fft_c2c_1d_impl.inc"
+#include "../generated/fwd_fft_c2c_1d_implementations.inc"
 
-#include "../generated/inverse_fft_c2c_1d_impl.inc"
+#include "../generated/inv_fft_c2c_1d_implementations.inc"

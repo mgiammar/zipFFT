@@ -6,10 +6,7 @@
 #include <device_launch_parameters.h>
 #endif
 
-template <typename T, unsigned int FFTSize>
-int block_fft_c2c_1d(T* data);
-
-template <typename T, unsigned int FFTSize>
-int block_ifft_c2c_1d(T* data);
+template <typename T, unsigned int FFTSize, bool IsForwardFFT, unsigned int elements_per_thread, unsigned int FFTs_per_block>
+int block_complex_fft_1d(T* data);
 
 #endif // COMPLEX_FFT_1D_CUH

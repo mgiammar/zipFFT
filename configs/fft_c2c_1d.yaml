@@ -1,0 +1,89 @@
+#############################################################
+### Configurations for forward/inverse complex-to-complex ###
+###  1D FFTs These will all be instantiated using the     ###
+### 'ComplexToComplexFFT1DGenerator' class                ###
+#############################################################
+- fft_size:            64
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            64
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            128
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            128
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            256
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            256
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            512
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            512
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            1024
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            1024
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            2048
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            2048
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            4096
+  input_data_type:     "complex64"
+  is_forward_fft:      true
+  elements_per_thread: 8
+  ffts_per_block:      2
+
+- fft_size:            4096
+  input_data_type:     "complex64"
+  is_forward_fft:      false
+  elements_per_thread: 8
+  ffts_per_block:      2
+
