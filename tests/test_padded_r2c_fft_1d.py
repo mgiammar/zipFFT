@@ -8,7 +8,9 @@ import yaml
 import os
 
 # Load padded FFT config from YAML file
-PADDED_FFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../configs/padded_fft_r2c_1d.yaml")
+PADDED_FFT_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), "../configs/padded_fft_r2c_1d.yaml"
+)
 TYPE_MAP = {
     "float16": torch.float16,
     "float32": torch.float32,
@@ -27,13 +29,18 @@ forward_configs = [cfg for cfg in config_list if cfg["is_forward_fft"]]
 # Extract unique (signal_length, fft_size) pairs and types for forward FFTs
 FORWARD_SIGNAL_LENGTHS = sorted(set(cfg["signal_length"] for cfg in forward_configs))
 FORWARD_FFT_SIZES = sorted(set(cfg["fft_size"] for cfg in forward_configs))
-FORWARD_FFT_PAIRS = sorted(set((cfg["signal_length"], cfg["fft_size"]) for cfg in forward_configs))
+FORWARD_FFT_PAIRS = sorted(
+    set((cfg["signal_length"], cfg["fft_size"]) for cfg in forward_configs)
+)
 FORWARD_FFT_TYPES = sorted(
     set(TYPE_MAP[cfg["input_data_type"]] for cfg in forward_configs),
-    key=lambda x: str(x)
+    key=lambda x: str(x),
 )
 
-def run_padded_forward_rfft_test(signal_length: int, fft_size: int, dtype: torch.dtype = torch.float32):
+
+def run_padded_forward_rfft_test(
+    signal_length: int, fft_size: int, dtype: torch.dtype = torch.float32
+):
     """Runs a single padded forward FFT test for a given signal length, fft_size, and dtype.
 
     Parameters
@@ -69,9 +76,11 @@ def run_padded_forward_rfft_test(signal_length: int, fft_size: int, dtype: torch
     # Our implementation
     zipfft_binding.padded_fft_r2c_1d(x_in_copy, x_out_copy, fft_size)
 
-    assert torch.allclose(
-        x_out, x_out_copy, atol=1e-4
-    ), f"Padded FFT results do not match ground truth for signal_length={signal_length}, fft_size={fft_size}"
+    assert torch.allclose(x_out, x_out_copy, atol=1e-4), (
+        f"Padded FFT results do not match ground truth for "
+        f"signal_length={signal_length}, fft_size={fft_size}"
+    )
+
 
 @pytest.mark.parametrize("signal_length,fft_size", FORWARD_FFT_PAIRS)
 @pytest.mark.parametrize("dtype", FORWARD_FFT_TYPES)
