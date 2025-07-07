@@ -4,12 +4,14 @@ from pathlib import Path
 
 from base_config import (
     BaseFFT1dConfig,
+    BaseFFT1dGenerator,
     type_str_to_torch_dtype,
     type_str_to_cuda_type,
 )
 
 STATIC_ASSERT_FFT_SIZE_MESSAGE = "Unsupported FFT size"
 STATIC_ASSERT_TYPE_MESSAGE = "Unsupported input/output data type"
+
 
 class RealToComplexFFT1DConfig(BaseFFT1dConfig):
     """Container for real-to-complex 1D FFT configuration."""
@@ -46,180 +48,146 @@ class RealToComplexFFT1DConfig(BaseFFT1dConfig):
         cuda_type = type_str_to_cuda_type(self.output_data_type)
         return f"std::is_same_v<Output_T, {cuda_type}>"
 
-    def get_template_instantiation(self) -> str:
-        in_type = type_str_to_cuda_type(self.input_data_type)
-        out_type = type_str_to_cuda_type(self.output_data_type)
-        fwd_inv_param = "true" if self.is_forward_fft else "false"
-        return (
-            f"template int {self.function_name}<{in_type}, {out_type}, "
-            f"{self.fft_size}u, {fwd_inv_param}, {self.elements_per_thread}u, "
-            f"{self.ffts_per_block}u>"
-            f"({in_type}* input_data, {out_type}* output_data);"
-        )
-        
     def get_signal_length_assert(self) -> str:
         return ""
 
-class RealToComplexFFT1DGenerator:
-    """Generator for real-to-complex and complex-to-real 1D FFT configurations."""
+    def get_function_signature(
+        self,
+        include_pointer_type: bool = True,
+        pointer_name: str = "input_data",
+        output_pointer_name: str = "output_data",
+    ) -> str:
+        in_type = type_str_to_cuda_type(self.input_data_type)
+        out_type = type_str_to_cuda_type(self.output_data_type)
+        fwd_inv_param = "true" if self.is_forward_fft else "false"
+        if include_pointer_type:
+            call = f"({in_type}* {pointer_name}, {out_type}* {output_pointer_name})"
+        else:
+            call = f"({pointer_name}, {output_pointer_name})"
+        return (
+            f"{self.function_name}<{in_type}, {out_type}, {self.fft_size}u, "
+            f"{fwd_inv_param}, {self.elements_per_thread}u, "
+            f"{self.ffts_per_block}u>{call}"
+        )
 
-    config_list: list[RealToComplexFFT1DConfig]
 
+class RealToComplexFFT1DGenerator(BaseFFT1dGenerator):
     _script_dir = Path(__file__).parent
-    _gen_dir = _script_dir / ".." / ".." / "src" / "generated"
-
-    fwd_implementations_file: Path = _gen_dir / "fwd_fft_r2c_1d_implementations.inc"
-    inv_implementations_file: Path = _gen_dir / "inv_fft_c2r_1d_implementations.inc"
-    fwd_static_assertions_file: Path = _gen_dir / "fwd_fft_r2c_1d_assertions.inc"
-    inv_static_assertions_file: Path = _gen_dir / "inv_fft_c2r_1d_assertions.inc"
-    fwd_binding_cases_file: Path = _gen_dir / "fwd_fft_r2c_1d_binding_cases.inc"
-    inv_binding_cases_file: Path = _gen_dir / "inv_fft_c2r_1d_binding_cases.inc"
+    _gen_dir = (_script_dir / ".." / ".." / "src" / "generated").resolve()
 
     def __init__(
         self,
-        config_list: list[RealToComplexFFT1DConfig],
-        fwd_implementations_file: str = None,
-        inv_implementations_file: str = None,
-        fwd_static_assertions_file: str = None,
-        inv_static_assertions_file: str = None,
-        fwd_binding_cases_file: str = None,
-        inv_binding_cases_file: str = None,
+        config_list=None,
+        is_forward=True,
+        binding_cases_file=None,
+        implementation_file=None,
+        static_assertions_file=None,
+        **kwargs,
     ):
-        self.config_list = config_list
-        if fwd_implementations_file:
-            self.fwd_implementations_file = Path(fwd_implementations_file)
-        if inv_implementations_file:
-            self.inv_implementations_file = Path(inv_implementations_file)
-        if fwd_static_assertions_file:
-            self.fwd_static_assertions_file = Path(fwd_static_assertions_file)
-        if inv_static_assertions_file:
-            self.inv_static_assertions_file = Path(inv_static_assertions_file)
-        if fwd_binding_cases_file:
-            self.fwd_binding_cases_file = Path(fwd_binding_cases_file)
-        if inv_binding_cases_file:
-            self.inv_binding_cases_file = Path(inv_binding_cases_file)
-
-    def _filter_configs_by_direction(self, is_forward: bool) -> list[RealToComplexFFT1DConfig]:
-        return [c for c in self.config_list if c.is_forward_fft == is_forward]
-
-    @classmethod
-    def from_yaml(cls, config_yaml_path: str) -> "RealToComplexFFT1DGenerator":
-        with open(config_yaml_path, "r") as f:
-            config_dicts = yaml.safe_load(f)
-        return cls.parse_dicts(config_dicts)
-
-    @classmethod
-    def parse_dicts(cls, config_dicts: list[dict]) -> "RealToComplexFFT1DGenerator":
-        configs = [RealToComplexFFT1DConfig(**config_dict) for config_dict in config_dicts]
-        return cls(configs)
-
-    def _get_warning_header(self) -> str:
-        return (
-            "// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-            "// !!! This file was auto-generated by the class   !!!\n"
-            "// !!! RealToComplexFFT1DGenerator. Do not edit    !!!\n"
-            "// !!! unless you know what you are doing.         !!!\n"
-            "// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n"
+        self.is_forward = is_forward
+        filtered = [
+            cfg for cfg in (config_list or []) if cfg.is_forward_fft == is_forward
+        ]
+        defaults = self.default_file_paths()
+        binding_cases_file = binding_cases_file or defaults[0]
+        implementation_file = implementation_file or defaults[1]
+        static_assertions_file = static_assertions_file or defaults[2]
+        super().__init__(
+            config_list=filtered,
+            binding_cases_file=binding_cases_file,
+            implementation_file=implementation_file,
+            static_assertions_file=static_assertions_file,
+            **kwargs,
         )
 
-    def _collect_assert_conditions(self, configs: list[RealToComplexFFT1DConfig]) -> tuple[list[str], list[str], list[str]]:
-        fft_size_conditions = []
-        input_type_conditions = []
-        output_type_conditions = []
-        for config in configs:
-            fft_size_conditions.append(config.get_fft_size_assert())
-            input_type_conditions.append(config.get_input_data_type_assert())
-            output_type_conditions.append(config.get_output_data_type_assert())
-        return list(set(fft_size_conditions)), list(set(input_type_conditions)), list(set(output_type_conditions))
+    @classmethod
+    def from_yaml(
+        cls,
+        yaml_path: str,
+        config_class=RealToComplexFFT1DConfig,
+        is_forward=True,
+        **kwargs,
+    ):
+        with open(yaml_path, "r") as file:
+            config_data = yaml.safe_load(file)
+        config_list = [config_class(**data) for data in config_data]
+        return cls(config_list=config_list, is_forward=is_forward, **kwargs)
 
-    def generate_cuda_static_asserts(self, is_forward: bool = True) -> str:
-        configs = self._filter_configs_by_direction(is_forward)
-        fft_size_conds, input_type_conds, output_type_conds = self._collect_assert_conditions(configs)
-        fft_size_assert = " || ".join(fft_size_conds)
-        input_type_assert = " || ".join(input_type_conds)
-        output_type_assert = " || ".join(output_type_conds)
-        fft_size_statement = f'static_assert({fft_size_assert}, "{STATIC_ASSERT_FFT_SIZE_MESSAGE}");'
+    @classmethod
+    def from_json(
+        cls,
+        json_path: str,
+        config_class=RealToComplexFFT1DConfig,
+        is_forward=True,
+        **kwargs,
+    ):
+        with open(json_path, "r") as file:
+            config_data = json.load(file)
+        config_list = [config_class(**data) for data in config_data]
+        return cls(config_list=config_list, is_forward=is_forward, **kwargs)
+
+    def default_file_paths(self) -> tuple[str, str, str]:
+        prefix = "fwd_fft_r2c" if self.is_forward else "inv_fft_c2r"
+        return (
+            str(self._gen_dir / f"{prefix}_1d_binding_cases.inc"),
+            str(self._gen_dir / f"{prefix}_1d_implementations.inc"),
+            str(self._gen_dir / f"{prefix}_1d_assertions.inc"),
+        )
+
+    def generate_static_assertions(self) -> str:
+        configs = self.config_list
+        fft_size_conditions = [cfg.get_fft_size_assert() for cfg in configs]
+        input_type_conditions = [cfg.get_input_data_type_assert() for cfg in configs]
+        output_type_conditions = [cfg.get_output_data_type_assert() for cfg in configs]
+
+        fft_size_conditions = list(set(filter(bool, fft_size_conditions)))
+        input_type_conditions = list(set(filter(bool, input_type_conditions)))
+        output_type_conditions = list(set(filter(bool, output_type_conditions)))
+
+        fft_size_conditions.sort()
+        input_type_conditions.sort()
+        output_type_conditions.sort()
+
+        fft_size_assert = " || ".join(fft_size_conditions)
+        input_type_assert = " || ".join(input_type_conditions)
+        output_type_assert = " || ".join(output_type_conditions)
+
+        fft_size_statement = (
+            f'static_assert({fft_size_assert}, "{STATIC_ASSERT_FFT_SIZE_MESSAGE}");'
+        )
         input_type_statement = f'static_assert({input_type_assert}, "{STATIC_ASSERT_TYPE_MESSAGE} (input wrong type)");'
         output_type_statement = f'static_assert({output_type_assert}, "{STATIC_ASSERT_TYPE_MESSAGE} (output wrong type)");'
-        return (
-            f"{self._get_warning_header()}"
-            f"{fft_size_statement}\n"
-            f"{input_type_statement}\n"
-            f"{output_type_statement}\n"
-        )
 
-    def write_cuda_static_asserts(self, is_forward: bool = None) -> None:
-        if is_forward is None or is_forward:
-            self.fwd_static_assertions_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.fwd_static_assertions_file, "w") as f:
-                f.write(self.generate_cuda_static_asserts(is_forward=True))
-        if is_forward is None or not is_forward:
-            self.inv_static_assertions_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.inv_static_assertions_file, "w") as f:
-                f.write(self.generate_cuda_static_asserts(is_forward=False))
+        return f"{self._get_warning_header()}{fft_size_statement}\n{input_type_statement}\n{output_type_statement}\n"
 
-    def generate_template_instantiations(self, is_forward: bool = True) -> str:
-        configs = self._filter_configs_by_direction(is_forward)
-        instantiations = [config.get_template_instantiation() for config in configs]
-        return f"{self._get_warning_header()}{chr(10).join(instantiations)}\n"
-
-    def write_template_instantiations(self, is_forward: bool = None) -> None:
-        if is_forward is None or is_forward:
-            self.fwd_implementations_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.fwd_implementations_file, "w") as f:
-                f.write(self.generate_template_instantiations(is_forward=True))
-        if is_forward is None or not is_forward:
-            self.inv_implementations_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.inv_implementations_file, "w") as f:
-                f.write(self.generate_template_instantiations(is_forward=False))
-
-    def _generate_switch_case(self, config: RealToComplexFFT1DConfig) -> str:
-        """Generate a single switch case statement for a configuration."""
-        in_type = type_str_to_cuda_type(config.input_data_type)
-        out_type = type_str_to_cuda_type(config.output_data_type)
-        is_forward = str(config.is_forward_fft).lower()
-        return (
-            f"case {config.fft_size}: "
-            f"{config.function_name}<{in_type}, {out_type}, {config.fft_size}u, "
-            f"{is_forward}, {config.elements_per_thread}u, {config.ffts_per_block}u>"
-            f"(input_ptr, output_ptr); break;"
-        )
-
-    def _generate_default_case(self, configs: list[RealToComplexFFT1DConfig]) -> str:
-        """Generate default case for switch statement with supported sizes."""
-        supported_sizes = [config.fft_size for config in configs]
-        supported_sizes_str = ", ".join(map(str, supported_sizes))
-        return (
+    def generate_binding_cases(self) -> str:
+        configs = self.config_list
+        cases = [
+            cfg.get_binding_case_call(
+                include_pointer_type=False,
+                pointer_name="input_ptr",
+                output_pointer_name="output_ptr",
+            )
+            for cfg in configs
+        ]
+        supported_sizes = ", ".join(str(cfg.fft_size) for cfg in configs)
+        default_case = (
             "default:\n"
-            f'    std::string supported_sizes = "[{supported_sizes_str}]";\n'
+            f'    std::string supported_sizes = "[{supported_sizes}]";\n'
             f'    TORCH_CHECK(false, "Unsupported FFT size " + std::to_string(fft_size) + '
             f'", supported sizes are: " + supported_sizes);'
         )
+        return f"{self._get_warning_header()}{chr(10).join(cases)}\n{default_case}\n"
 
-    def generate_python_binding_switch_statements(self, is_forward: bool = True) -> str:
-        """Generate Python binding switch statements for configurations."""
-        configs = self._filter_configs_by_direction(is_forward)
-        switch_cases = [self._generate_switch_case(config) for config in configs]
-        switch_cases.append(self._generate_default_case(configs))
-        return f"{self._get_warning_header()}{chr(10).join(switch_cases)}\n"
-
-    def write_python_binding_switch_statements(self, is_forward: bool = None) -> None:
-        """Write Python binding switch statements to files."""
-        if is_forward is None or is_forward:
-            self.fwd_binding_cases_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.fwd_binding_cases_file, "w") as f:
-                f.write(self.generate_python_binding_switch_statements(is_forward=True))
-        if is_forward is None or not is_forward:
-            self.inv_binding_cases_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.inv_binding_cases_file, "w") as f:
-                f.write(self.generate_python_binding_switch_statements(is_forward=False))
-
-    def write_all_files(self) -> None:
-        self.write_cuda_static_asserts()
-        self.write_template_instantiations()
-        self.write_python_binding_switch_statements()
 
 if __name__ == "__main__":
-    config_path = Path(__file__).parent.parent / "fft_r2c_1d.yaml"
-    gen = RealToComplexFFT1DGenerator.from_yaml(str(config_path))
-    gen.write_all_files()
+    fwd_gen = RealToComplexFFT1DGenerator.from_yaml(
+        yaml_path="configs/fft_r2c_1d.yaml",
+        is_forward=True,
+    )
+    inv_gen = RealToComplexFFT1DGenerator.from_yaml(
+        yaml_path="configs/fft_r2c_1d.yaml",
+        is_forward=False,
+    )
+    fwd_gen.write_all_files()
+    inv_gen.write_all_files()
