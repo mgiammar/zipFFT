@@ -10,6 +10,7 @@
 #include "../include/complex_fft_1d.cuh"
 #include "../include/real_fft_1d.cuh"
 #include "../include/padded_real_fft_1d.cuh"
+#include "../include/padded_real_conv_1d.cuh"
 
 
 void fft_c2c_1d(torch::Tensor input) {
@@ -103,6 +104,62 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, unsigned int s
     #include "../generated/fwd_padded_fft_r2c_1d_binding_cases.inc"
 }
 
+void padded_conv_1d(torch::Tensor input, torch::Tensor output, torch::Tensor filter, unsigned int s) {
+    TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
+    TORCH_CHECK(input.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
+    TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+
+    TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
+    TORCH_CHECK(output.dtype() == torch::kFloat, "Output tensor must be of type torch.float32");
+    TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
+
+    TORCH_CHECK(filter.device().is_cuda(), "Filter tensor must be on CUDA device");
+    TORCH_CHECK(filter.dtype() == torch::kComplexFloat, "Filter tensor must be of type torch.complex64");
+    TORCH_CHECK(filter.dim() == 1, "Filter tensor must be 1D.");
+
+    // TORCH_CHECK(s / 2 + 1 == filter.size(0), "Filter size must be (s / 2 + 1)");
+
+    float*       input_ptr   = input.data_ptr<float>();
+    float*       output_ptr  = output.data_ptr<float>();
+    float2*      filter_ptr  = reinterpret_cast<float2*>(filter.data_ptr<c10::complex<float>>());
+
+    unsigned int fft_size      = s;
+    unsigned int signal_length = input.size(0);
+
+    // // TODO: Nested switch to handle all valid (signal_length, fft_size) combinations
+    // #include "../generated/padded_conv_1d_binding_cases.inc"
+    switch (fft_size) {
+        case 128: {
+            padded_block_conv_real_1d<float, float2, 64, 128, 8u, 2u>(
+                input_ptr,
+                output_ptr,
+                filter_ptr
+            );
+            break;
+        }
+        case 256: {
+            padded_block_conv_real_1d<float, float2, 64, 256, 8u, 2u>(
+                input_ptr,
+                output_ptr,
+                filter_ptr
+            );
+            break;
+        }
+        case 512: {
+            padded_block_conv_real_1d<float, float2, 64, 512, 8u, 2u>(
+                input_ptr,
+                output_ptr,
+                filter_ptr
+            );
+            break;
+        }
+        default: {
+            TORCH_CHECK(false, "Unsupported FFT size for padded convolution: ", fft_size);
+            break;
+        }   
+    }
+}
+
 PYBIND11_MODULE(zipfft_binding, m) {
     m.doc() = "pybind11 binding example";
     m.def("fft_c2c_1d",  &fft_c2c_1d,  "Run in-place 1D C2C FFT using cuFFTDx.");
@@ -110,4 +167,5 @@ PYBIND11_MODULE(zipfft_binding, m) {
     m.def("fft_r2c_1d",  &fft_r2c_1d,  "Run out-of-place 1D R2C FFT using cuFFTDx.");
     m.def("ifft_c2r_1d", &ifft_c2r_1d, "Run out-of-place 1D C2R IFFT using cuFFTDx.");
     m.def("padded_fft_r2c_1d", &padded_fft_r2c_1d, "Run padded out-of-place 1D R2C FFT using cuFFTDx.");
+    m.def("padded_conv_1d", &padded_conv_1d, "Run padded 1D convolution using cuFFTDx.");
 }

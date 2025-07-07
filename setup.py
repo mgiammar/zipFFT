@@ -29,6 +29,7 @@ setup(
                 "src/cuda/complex_fft_1d.cu",
                 "src/cuda/real_fft_1d.cu",
                 "src/cuda/padded_real_fft_1d.cu",
+                "src/cuda/padded_real_conv_1d.cu",
             ],
             include_dirs=[
                 pybind11.get_include(),
