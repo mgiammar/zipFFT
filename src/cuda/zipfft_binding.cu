@@ -15,7 +15,7 @@
 void fft_c2c_1d(torch::Tensor input) {
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat, "Input tensor must be of type torch.complex64");
-    TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+    // TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
 
     float2* data_ptr = reinterpret_cast<float2*>(input.data_ptr<c10::complex<float>>());
     unsigned int fft_size = input.size(0);
@@ -29,7 +29,7 @@ void fft_c2c_1d(torch::Tensor input) {
 void ifft_c2c_1d(torch::Tensor input) {
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat, "Input tensor must be of type torch.complex64");
-    TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+    // TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
 
     float2* data_ptr = reinterpret_cast<float2*>(input.data_ptr<c10::complex<float>>());
     unsigned int fft_size = input.size(0);
@@ -43,11 +43,11 @@ void ifft_c2c_1d(torch::Tensor input) {
 void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kFloat, "Input tensor must be of type torch.float32");
-    TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
+    // TORCH_CHECK(input.dim() == 1, "Input tensor must be 1D.");
 
     TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
     TORCH_CHECK(output.dtype() == torch::kComplexFloat, "Output tensor must be of type torch.complex64");
-    TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
+    // TORCH_CHECK(output.dim() == 1, "Output tensor must be 1D.");
 
     TORCH_CHECK(input.size(0) / 2 + 1 == output.size(0), "Output tensor size must be (input_size / 2 + 1)");
 

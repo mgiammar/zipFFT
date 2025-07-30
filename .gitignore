@@ -61,3 +61,7 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 .pyre/
+
+
+# User-specific files
+.clang-format
