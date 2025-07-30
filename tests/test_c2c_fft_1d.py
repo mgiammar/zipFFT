@@ -1,7 +1,7 @@
 """Simple complex-to-complex 1D FFT tests for cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import zipfft_binding
+from zipfft import cfft1d
 
 import pytest
 import yaml
@@ -17,19 +17,10 @@ TYPE_MAP = {
     "complex128": torch.complex128,
 }
 
-# NOTE: These configurations are hard-coded. Including more instantiations in the
-# complex_fft_1d_binding.cu file will require manually adding them here.
-FORWARD_FFT_CONFIGS = [
-    (size, batch, torch.complex64)
-    for size in [64, 128, 256, 512, 1024, 2048, 4096]
-    for batch in [1, 2]
-]
-INVERSE_FFT_CONFIGS = [
-    (size, batch, torch.complex64)
-    for size in [64, 128, 256, 512, 1024, 2048, 4096]
-    for batch in [1, 2]
-]
-
+ALL_CONFIGS = cfft1d.get_supported_configs()
+FORWARD_FFT_CONFIGS = [(cfg[0], cfg[1]) for cfg in ALL_CONFIGS if cfg[2] is True]
+INVERSE_FFT_CONFIGS = [(cfg[0], cfg[1]) for cfg in ALL_CONFIGS if cfg[2] is False]
+DATA_TYPES = [torch.complex64]
 
 def run_forward_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
     """Runs a single forward FFT test for a given size and dtype.
@@ -48,7 +39,7 @@ def run_forward_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
     torch.fft.fft(x0, out=x0)
 
     # NOTE: This zipFFT function is in-place
-    zipfft_binding.fft_c2c_1d(x1)
+    cfft1d.fft(x1)
 
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
@@ -71,19 +62,21 @@ def run_inverse_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
     x0 *= float(fft_shape[-1])  # Scale the output to match the inverse FFT definition
 
     # NOTE: This zipFFT function is in-place
-    zipfft_binding.ifft_c2c_1d(x1)
+    cfft1d.ifft(x1)
 
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
 
-@pytest.mark.parametrize("fft_size,batch_size,dtype", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_fft_c2c_1d(fft_size, batch_size, dtype):
     """Test forward FFT for specific size, batch size, and dtype."""
     shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
     run_forward_fft_test(fft_shape=shape, dtype=dtype)
 
 
-@pytest.mark.parametrize("fft_size,batch_size,dtype", INVERSE_FFT_CONFIGS)
+@pytest.mark.parametrize("fft_size,batch_size", INVERSE_FFT_CONFIGS)
+@pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_ifft_c2c_1d(fft_size, batch_size, dtype):
     """Test inverse FFT for specific size, batch size, and dtype."""
     shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
