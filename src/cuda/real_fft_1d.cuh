@@ -2,7 +2,6 @@
 
 #include "../include/block_io.hpp"
 #include "../include/common.hpp"
-// #include "../include/dispatcher.hpp"
 
 // --- r2c & c2r Kernel Definitions ---
 template <class FFT, typename ComplexType = typename FFT::value_type,

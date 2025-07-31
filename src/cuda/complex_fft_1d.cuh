@@ -1,11 +1,7 @@
-#include <cuda_runtime.h>
-
 #include <cufftdx.hpp>
-#include <type_traits>
 
 #include "../include/block_io.hpp"
 #include "../include/common.hpp"
-// #include "../include/dispatcher.hpp"
 
 // --- Kernel Definition ---
 template <class FFT>
