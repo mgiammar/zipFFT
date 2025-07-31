@@ -55,7 +55,7 @@ def run_padded_forward_rfft_test(
     torch.fft.rfft(x_in_padded, n=fft_size, out=x_out, dim=-1)
 
     # Our implementation
-    padded_rfft1d.padded_fft_r2c_1d(x_in_copy, x_out_copy, fft_size)
+    padded_rfft1d.prfft(x_in_copy, x_out_copy, fft_size)
 
     assert torch.allclose(x_out, x_out_copy, atol=1e-4), (
         f"Padded FFT results do not match ground truth for "

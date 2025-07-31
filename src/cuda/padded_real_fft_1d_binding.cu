@@ -198,7 +198,7 @@ void padded_fft_r2c_1d(torch::Tensor input, torch::Tensor output, int s) {
 
 PYBIND11_MODULE(padded_rfft1d, m) {
     m.doc() = "Implicitly zero-padded 1D real-to-complex FFT using cuFFTDx";
-    m.def("padded_fft_r2c_1d", &padded_fft_r2c_1d,
+    m.def("prfft", &padded_fft_r2c_1d,
           "Perform a padded real-to-complex FFT on a 1D input tensor");
     m.def("get_supported_configs", &get_supported_fft_configs,
           "Get the list of supported padded real FFT configurations");
