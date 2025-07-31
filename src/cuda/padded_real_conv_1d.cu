@@ -25,8 +25,9 @@ void padded_block_conv_real_1d_kernel(
     using scalar_type  = typename complex_type::value_type;
 
     // Input is padded (the data to be FFT-ed), output is not padded
-    using input_utils  = example::io_padded<FFT, SignalLength>;
-    using output_utils = example::io<IFFT>;
+    using input_utils_padded  = example::io_padded<FFT, SignalLength>;
+    using input_utils         = example::io<FFT>;
+    using output_utils        = example::io<IFFT>;
 
     // Local arrays for FFT and filter data
     complex_type thread_data[FFT::storage_size];
@@ -34,17 +35,17 @@ void padded_block_conv_real_1d_kernel(
 
     // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
     const unsigned int local_fft_id = threadIdx.y;
-    input_utils::load(input_data, thread_data, local_fft_id);
+    input_utils_padded::load(input_data, thread_data, local_fft_id);
     input_utils::load(filter_data, filter_data_local, local_fft_id);
 
     // Execute FFT on input data
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem, workspace_fwd);
 
-    // Apply point-wise multiplication for convolution
-    for (unsigned int i = 0; i < FFT::storage_size; ++i) {
-        thread_data[i] *= filter_data_local[i];
-    }
+    // // Apply point-wise multiplication for convolution
+    // for (unsigned int i = 0; i < FFT::storage_size; ++i) {
+    //     thread_data[i] *= filter_data_local[i];
+    // }
 
     // Execute inverse FFT to get the convolution result
     IFFT().execute(thread_data, shared_mem, workspace_inv);
@@ -98,6 +99,11 @@ inline void padded_real_conv_1d_launcher( ScalarType* input_data, ScalarType* ou
     cudaError_t error_code = cudaSuccess;
     auto        workspace_fwd = make_workspace<fft>(error_code);
     auto        workspace_inv = make_workspace<ifft>(error_code);
+
+    // DEBUG: Print some of the fft attributes
+    printf("FFT block size: %u\n", fft::block_dim);
+    printf("FFT shared memory size: %u\n", fft::shared_memory_size);
+    printf("FFT storage size: %u\n", fft::storage_size);
 
     // Launch the kernel
     padded_block_conv_real_1d_kernel<SignalLength, fft, ifft><<<1, fft::block_dim, fft::shared_memory_size>>>(
