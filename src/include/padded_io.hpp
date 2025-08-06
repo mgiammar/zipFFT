@@ -24,6 +24,10 @@ namespace example {
             return SignalLength * global_fft_id;
         }
 
+        static inline __device__ unsigned int batch_offset_strided(unsigned int local_fft_id) {
+            return batch_offset(local_fft_id);
+        }
+
         // If InputInRRIILayout is false, then function assumes that values in input are in RIRI
         // layout, and before loading them to thread_data they are converted to RRII layout.
         // Otherwise, if InputInRRIILayout is true, then function assumes values in input are in RRII
@@ -48,12 +52,47 @@ namespace example {
             for (unsigned int i = 0; i < FFT::input_ept; i++) {
                 for(unsigned int j = 0; j < inner_loop_limit; ++j) {
                     if ((i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit) < SignalLength) {
-                            reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = op(reinterpret_cast<const IOType*>(input)[index + j]);
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = op(reinterpret_cast<const IOType*>(input)[index + j]);
                     } else {
-                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = get_zero<typename complex_type::value_type>();
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = get_zero<IOType>();
                     }
                 }
                 index += inner_loop_limit * stride;
+            }
+        }
+
+        // Function assumes that values are in RRII layout (which I think is ok)
+        // Slight re-definition from load function to allow for strided access
+        // to underlying data while retaining the zero-padding logic.
+        template<unsigned int Stride, unsigned int Batches = Stride, typename RegisterType, typename IOType, typename LoadOp = example::identity>
+        static inline __device__ void
+            load_strided(const IOType* input,
+                         RegisterType* thread_data,
+                         unsigned int  local_fft_id,
+                         LoadOp op = {}) {
+            using input_t      = typename FFT::input_type;
+            using complex_type = typename FFT::value_type;
+
+            constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
+            
+            // Calculate global offset of FFT batch
+            const unsigned int batch_offset = batch_offset_strided(local_fft_id);
+            
+            // Get stride, this includes how elements are split between threads and memory access pattern
+            const unsigned int fft_stride = FFT::stride;
+            const unsigned int stride     = Stride * fft_stride;
+            unsigned int       index      = batch_offset + (threadIdx.x * Stride);
+
+            for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+                for(unsigned int j = 0; j < inner_loop_limit; ++j) {
+                    // stride (from above load function) has been replaced with fft_stride
+                    if ((i * fft_stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit) < SignalLength) {
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = op(reinterpret_cast<const IOType*>(input)[index + j]);
+                    } else {
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] = get_zero<IOType>();
+                    }
+                    index += inner_loop_limit * stride;
+                }
             }
         }
 
