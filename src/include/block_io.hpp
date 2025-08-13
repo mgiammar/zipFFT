@@ -111,7 +111,7 @@ namespace example {
             // Get stride, this shows how elements from batch should be split between threads
             const unsigned int stride = FFT::stride;
             unsigned int       index  = offset + threadIdx.x;
-            for (unsigned int i = 0; i < FFT::input_ept; i++) {
+            for (unsigned int i = 0; i < FFT::input_ept; ++i) {
                 if ((i * stride + threadIdx.x) < FFT::input_length) {
                     if constexpr (needs_half2_format_conversion) {
                         reinterpret_cast<input_t*>(thread_data)[i] =
