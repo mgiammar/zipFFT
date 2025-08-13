@@ -58,12 +58,20 @@ padded_real_fft_1d_extension = CUDAExtension(
     extra_compile_args=DEFAULT_COMPILE_ARGS,
 )
 
+# padded_real_convolution_1d_extension = CUDAExtension(
+#     name="zipfft.padded_rconv1d",
+#     sources=["src/cuda/padded_real_conv_1d.cu"],
+#     include_dirs=[pybind11.get_include()],
+#     extra_compile_args=DEFAULT_COMPILE_ARGS,
+# )
+
 # TODO: Make this setup script more robust (plus conda recipe)
 setup(
     ext_modules=[
         complex_fft_1d_extension,
         real_fft_1d_extension,
         padded_real_fft_1d_extension,
+        # padded_real_convolution_1d_extension,
     ],
     cmdclass={"build_ext": BuildExtension},
     version=__version__,

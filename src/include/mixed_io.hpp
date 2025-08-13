@@ -9,7 +9,7 @@
 #include "cuda_fp16.h"
 #include "cuda_bf16.h"
 
-#include "../common/block_io.hpp"
+#include "block_io.hpp"
 
 namespace example {
 

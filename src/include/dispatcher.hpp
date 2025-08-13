@@ -195,4 +195,34 @@ namespace dispatcher {
         std::cerr << "Unsupported CUDA architecture: " << cuda_device_arch << std::endl;
         return 1; // Unsupported architecture
     }
+
+    template< template <
+            unsigned int,
+            typename,
+            typename,
+            unsigned int,
+            unsigned int,
+            unsigned int,
+            unsigned int
+        > class Functor,
+        typename     RealType_Actual,
+        typename     ComplexType_Actual,
+        unsigned int SignalLength_Actual,
+        unsigned int FFTSize_Actual,
+        unsigned int elements_per_thread_Actual,
+        unsigned int FFTs_per_block_Actual>
+    inline int sm_runner_padded_conv(RealType_Actual* input_data, RealType_Actual* output_data, ComplexType_Actual* filter_data) {
+        const auto cuda_device_arch = get_cuda_device_arch();
+
+        switch (cuda_device_arch) {
+            case 800:  Functor<800, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+            case 860:  Functor<860, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+            case 870:  Functor<870, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+            case 890:  Functor<890, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+            case 900:  Functor<900, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+            case 1200: Functor<900, RealType_Actual, ComplexType_Actual, SignalLength_Actual, FFTSize_Actual, elements_per_thread_Actual, FFTs_per_block_Actual>()(input_data, output_data, filter_data); return 0;
+        }
+        std::cerr << "Unsupported CUDA architecture: " << cuda_device_arch << std::endl;
+        return 1; // Unsupported architecture
+    }
 }
