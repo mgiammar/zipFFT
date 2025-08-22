@@ -3,6 +3,9 @@
 #include "../include/block_io.hpp"
 #include "../include/common.hpp"
 
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+
 // --- Kernel Definition ---
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block) __global__
@@ -62,10 +65,13 @@ inline void block_fft_c2c_1d_launcher(T* data, unsigned int outer_batch_count) {
     //        FFT::block_dim.y, FFT::block_dim.z);
 
     // Launch the kernel and ensure no errors afterwards
+
+    cudaStream_t strm = at::cuda::getCurrentCUDAStream().stream();
+
     block_fft_c2c_1d_kernel<FFT>
-        <<<outer_batch_count, FFT::block_dim, FFT::shared_memory_size>>>(data_t);
+        <<<outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(data_t);
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
-    CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+    //CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }
 
 // --- Public API Function Template Definition ---

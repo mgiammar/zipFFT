@@ -16,6 +16,8 @@
 #include <pybind11/pybind11.h>
 #include <stdio.h>
 #include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
 
 #include <array>
 #include <functional>
@@ -136,6 +138,8 @@ void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
                 "Input tensor must be of type torch.complex64");
 
     unsigned int fft_size, batch_size, outer_batch_count;
+
+    c10::cuda::CUDAGuard guard(input.device()); 
 
     // Doing dimension checks for fft size and batch dimension
     if (input.dim() == 1) {
