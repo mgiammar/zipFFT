@@ -73,15 +73,15 @@ static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 28>
 
 // Template dispatch functions for each supported configuration
 template <unsigned int FFTSize, unsigned int BatchSize, bool IsForwardFFT>
-void dispatch_fft(float2* data) {
-    block_complex_fft_1d<float2, FFTSize, IsForwardFFT, 8u, BatchSize>(data);
+void dispatch_fft(float2* data, unsigned int outer_batch_count) {
+    block_complex_fft_1d<float2, FFTSize, IsForwardFFT, 8u, BatchSize>(data, outer_batch_count);
 }
 
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>
 constexpr auto make_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<ComplexFFTConfig1D, std::function<void(float2*)>>,
+        std::pair<ComplexFFTConfig1D, std::function<void(float2*, unsigned int)>>,
         sizeof...(Is)>{
         {{ComplexFFTConfig1D{std::get<0>(SUPPORTED_FFT_CONFIGS[Is]),
                              std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -98,7 +98,7 @@ static const auto dispatch_table = make_dispatch_table(
     std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
 // Create lookup function with compile-time dispatch table
-std::function<void(float2*)> get_fft_function(unsigned int fft_size,
+std::function<void(float2*, unsigned int)> get_fft_function(unsigned int fft_size,
                                               unsigned int batch_size,
                                               bool is_forward) {
     // Find matching configuration
@@ -135,15 +135,24 @@ void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
                 "Input tensor must be of type torch.complex64");
 
-    unsigned int fft_size, batch_size;
+    unsigned int fft_size, batch_size, outer_batch_count;
 
     // Doing dimension checks for fft size and batch dimension
     if (input.dim() == 1) {
         fft_size = input.size(0);
         batch_size = 1;
+        outer_batch_count = 1;
     } else if (input.dim() == 2) {
         fft_size = input.size(1);
-        batch_size = input.size(0);
+        batch_size = 1;
+        outer_batch_count = input.size(0);
+        if(outer_batch_count % 2 == 0) {
+            batch_size = 2;
+            outer_batch_count /= 2;
+        }
+
+        //printf("Batch size set to %u based on outer batch count of %u\n", batch_size, outer_batch_count);
+        
     } else {
         TORCH_CHECK(false, "Input tensor must be 1D or 2D. Got ", input.dim(),
                     "D.");
@@ -160,7 +169,7 @@ void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size, ", is_forward=", is_forward);
 
-    fft_func(data_ptr);
+    fft_func(data_ptr, outer_batch_count);
 }
 
 void fft_c2c_1d(torch::Tensor input) {
