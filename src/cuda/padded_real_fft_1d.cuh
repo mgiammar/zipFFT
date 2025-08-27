@@ -4,18 +4,22 @@
 #include "../include/common.hpp"
 #include "../include/padded_io.hpp"
 
-template <int SignalLength, class FFT,
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+
+template <class FFT,
           typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
     void padded_block_fft_r2c_1d_kernel(
         ScalarType* input_data, ComplexType* output_data,
-        typename FFT::workspace_type workspace) {
+        typename FFT::workspace_type workspace,
+        unsigned int signal_length) {
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
     // Input is padded, use padded I/O utilities. Output is not padded
-    using input_utils = example::io_padded<FFT, SignalLength>;
+    using input_utils = example::io_padded<FFT>;
     using output_utils = example::io<FFT>;
 
     // Local array for thread
@@ -24,7 +28,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
     // then load data from global memory to registers
     const unsigned int local_fft_id = threadIdx.y;
-    input_utils::load(input_data, thread_data, local_fft_id);
+    input_utils::load(input_data, thread_data, local_fft_id, signal_length);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
@@ -71,10 +75,12 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
 // --- Unified Launcher Definition (for both padded r2c & c2r) ---
 template <unsigned int Arch, typename Input_T, typename Output_T,
-          unsigned int SignalLength, unsigned int FFTSize, bool IsForwardFFT,
+          unsigned int FFTSize, bool IsForwardFFT,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
 inline void padded_block_real_fft_1d_launcher(Input_T* input_data,
-                                              Output_T* output_data) {
+                                              Output_T* output_data,
+                                              unsigned int signal_length,
+                                              unsigned int outer_batch_count) {
     using namespace cufftdx;
 
     // R2C and C2R specific data layout property
@@ -98,11 +104,13 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data,
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
+    cudaStream_t strm = at::cuda::getCurrentCUDAStream().stream();
+
     // Compile-time branching to determine which FFT kernel to use
     if constexpr (IsForwardFFT) {
         // Increase shared memory size, if needed
         CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-            padded_block_fft_r2c_1d_kernel<SignalLength, FFT>,
+            padded_block_fft_r2c_1d_kernel<FFT>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             FFT::shared_memory_size));
 
@@ -118,9 +126,9 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data,
         CUDA_CHECK_AND_EXIT(error_code);
 
         // Launch the kernel
-        padded_block_fft_r2c_1d_kernel<SignalLength, FFT>
-            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(
-                input_data_t, output_data_t, workspace);
+        padded_block_fft_r2c_1d_kernel<FFT>
+            <<<outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+                input_data_t, output_data_t, workspace, signal_length);
     } else {
         // // Increase shared memory size, if needed
         // CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
@@ -146,10 +154,10 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data,
 }
 
 // --- Public API Function Template Definition ---
-template <typename Input_T, typename Output_T, unsigned int SignalLength,
+template <typename Input_T, typename Output_T,
           unsigned int FFTSize, bool IsForwardFFT,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
-int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
+int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data, unsigned int signal_length, unsigned int outer_batch_count) {
     // Throw if backward FFTs since they are not implemented yet
     static_assert(IsForwardFFT,
                   "Backward padded real FFTs (c2r) are not implemented yet.");
@@ -160,14 +168,14 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
-        case 800: padded_block_real_fft_1d_launcher<800, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
-        case 860: padded_block_real_fft_1d_launcher<860, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
-        case 870: padded_block_real_fft_1d_launcher<870, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
-        case 890: padded_block_real_fft_1d_launcher<890, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
-        case 900: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+        case 800: padded_block_real_fft_1d_launcher<800, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
+        case 860: padded_block_real_fft_1d_launcher<860, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
+        case 870: padded_block_real_fft_1d_launcher<870, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
+        case 890: padded_block_real_fft_1d_launcher<890, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
+        case 900: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
         // Fallback: Architecture 1200 uses the 900 template as cuFFTDx does not yet
         // provide specific optimizations for newer architectures like Hopper/Blackwell.
-        case 1200: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+        case 1200: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, signal_length, outer_batch_count); break;
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                     << ". Supported architectures are 800, 860, 870, 890, "

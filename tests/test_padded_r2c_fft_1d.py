@@ -8,6 +8,7 @@ import yaml
 import os
 
 FORWARD_FFT_CONFIGS = padded_rfft1d.get_supported_configs()
+BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DATA_TYPES = [torch.float32]
 
 
@@ -62,9 +63,11 @@ def run_padded_forward_rfft_test(
         f"signal_length={signal_length}, fft_size={fft_size}, batch_size={batch_size}"
     )
 
-
-@pytest.mark.parametrize("fft_size,signal_length,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
-def test_padded_fft_r2c_1d(fft_size, signal_length, batch_size, dtype):
+@pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
+def test_padded_fft_r2c_1d(fft_size, batch_size, dtype, batch_scale):
     """Test padded forward FFT for specific signal length, fft_size, and dtype."""
-    run_padded_forward_rfft_test(fft_size, signal_length, batch_size, dtype)
+    # generate a random signal length less than or equal to fft_size
+    signal_length = torch.randint(1, fft_size + 1, (1,)).item()
+    run_padded_forward_rfft_test(fft_size, signal_length, batch_scale, dtype)
