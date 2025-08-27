@@ -59,23 +59,23 @@ static constexpr std::array<std::tuple<unsigned int, unsigned int>, 14>
 // NOTE: Elements-per-thread (8u) currently fixed for now, but could be changed
 // in the future...
 template <unsigned int FFTSize, unsigned int BatchSize>
-void dispatch_fft_forward(float* input_data, float2* output_data) {
+void dispatch_fft_forward(float* input_data, float2* output_data, unsigned int outer_batch_count) {
     block_real_fft_1d<float, float2, FFTSize, true, 8u, BatchSize>(input_data,
-                                                                   output_data);
+                                                                   output_data, outer_batch_count);
 }
 
 // NOTE: Elements-per-thread (8u) currently fixed for now, but could be changed
 // in the future...
 template <unsigned int FFTSize, unsigned int BatchSize>
-void dispatch_fft_inverse(float2* input_data, float* output_data) {
+void dispatch_fft_inverse(float2* input_data, float* output_data, unsigned int outer_batch_count) {
     block_real_fft_1d<float2, float, FFTSize, false, 8u, BatchSize>(
-        input_data, output_data);
+        input_data, output_data, outer_batch_count);
 }
 
 template <std::size_t... Is>
 constexpr auto make_forward_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<RealFFTConfig1D, std::function<void(float*, float2*)>>,
+        std::pair<RealFFTConfig1D, std::function<void(float*, float2*, unsigned int)>>,
         sizeof...(Is)>{
         {{RealFFTConfig1D{std::get<0>(SUPPORTED_FFT_CONFIGS[Is]),
                           std::get<1>(SUPPORTED_FFT_CONFIGS[Is]), true},
@@ -89,7 +89,7 @@ constexpr auto make_forward_dispatch_table(std::index_sequence<Is...>) {
 template <std::size_t... Is>
 constexpr auto make_inverse_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<RealFFTConfig1D, std::function<void(float2*, float*)>>,
+        std::pair<RealFFTConfig1D, std::function<void(float2*, float*, unsigned int)>>,
         sizeof...(Is)>{
         {{RealFFTConfig1D{std::get<0>(SUPPORTED_FFT_CONFIGS[Is]),
                           std::get<1>(SUPPORTED_FFT_CONFIGS[Is]), false},
@@ -107,7 +107,7 @@ static const auto forward_dispatch_table = make_forward_dispatch_table(
 static const auto inverse_dispatch_table = make_inverse_dispatch_table(
     std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
-std::function<void(float*, float2*)> get_forward_fft_function(
+std::function<void(float*, float2*, unsigned int)> get_forward_fft_function(
     unsigned int fft_size, unsigned int batch_size, bool is_forward) {
     // Find matching configuration
     for (const auto& entry : forward_dispatch_table) {
@@ -122,7 +122,7 @@ std::function<void(float*, float2*)> get_forward_fft_function(
     return nullptr;
 }
 
-std::function<void(float2*, float*)> get_inverse_fft_function(
+std::function<void(float2*, float*, unsigned int)> get_inverse_fft_function(
     unsigned int fft_size, unsigned int batch_size, bool is_forward) {
     // Find matching configuration
     for (const auto& entry : inverse_dispatch_table) {
@@ -165,17 +165,24 @@ void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
         output.dim() == input.dim(),
         "Input and output tensors must have the same number of dimensions");
 
-    unsigned int fft_size, batch_size;
+    unsigned int fft_size, batch_size, outer_batch_count;
 
     // Size and shape extractions with necessary checks for correctness
     if (input.dim() == 1) {
         fft_size = input.size(0);
         batch_size = 1;
+        outer_batch_count = 1;
         TORCH_CHECK(output.size(0) == (fft_size / 2 + 1),
                     "Output tensor size must be (input_size / 2 + 1)");
     } else if (input.dim() == 2) {
         fft_size = input.size(1);
-        batch_size = input.size(0);
+        //batch_size = input.size(0);
+        batch_size = 1;
+        outer_batch_count = input.size(0);
+        if(outer_batch_count % 2 == 0) {
+            batch_size = 2;
+            outer_batch_count /= 2;
+        }
         TORCH_CHECK(
             output.size(0) == input.size(0),
             "Output tensor batch size must match input tensor batch size");
@@ -199,7 +206,7 @@ void fft_r2c_1d(torch::Tensor input, torch::Tensor output) {
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    fft_func(input_data, output_data);
+    fft_func(input_data, output_data, outer_batch_count);
 }
 
 void fft_c2r_1d(torch::Tensor input, torch::Tensor output) {
@@ -217,17 +224,24 @@ void fft_c2r_1d(torch::Tensor input, torch::Tensor output) {
         output.dim() == input.dim(),
         "Input and output tensors must have the same number of dimensions");
 
-    unsigned int fft_size, batch_size;
+    unsigned int fft_size, batch_size, outer_batch_count;
 
     // Size and shape extractions with necessary checks for correctness
     if (output.dim() == 1) {
         fft_size = output.size(0);
         batch_size = 1;
+        outer_batch_count = 1;
         TORCH_CHECK(input.size(0) == fft_size / 2 + 1,
                     "Output tensor size must be (input_size * 2 - 2)");
     } else if (output.dim() == 2) {
         fft_size = output.size(1);
-        batch_size = output.size(0);
+        //batch_size = output.size(0);
+        batch_size = 1;
+        outer_batch_count = input.size(0);
+        if(outer_batch_count % 2 == 0) {
+            batch_size = 2;
+            outer_batch_count /= 2;
+        }
         TORCH_CHECK(
             output.size(0) == input.size(0),
             "Output tensor batch size must match input tensor batch size");
@@ -251,7 +265,7 @@ void fft_c2r_1d(torch::Tensor input, torch::Tensor output) {
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    fft_func(input_data, output_data);
+    fft_func(input_data, output_data, outer_batch_count);
 }
 
 PYBIND11_MODULE(rfft1d, m) {

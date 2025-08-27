@@ -6,11 +6,11 @@ from zipfft import rfft1d
 import pytest
 import yaml
 import os
-
+import sys
 
 FORWARD_FFT_CONFIGS = rfft1d.get_supported_configs()
+BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DATA_TYPES = [torch.float32]
-
 
 def run_forward_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
     """Runs a single forward FFT test for a given size and dtype.
@@ -50,10 +50,10 @@ def run_forward_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
         x_out, x_out_copy, atol=1e-4
     ), "FFT results do not match ground truth"
 
-
 @pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
-def test_fft_r2c_1d(fft_size, batch_size, dtype):
+@pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
+def test_fft_r2c_1d(fft_size, batch_size, dtype, batch_scale):
     """Test forward FFT for specific size and dtype."""
-    shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
+    shape = (batch_scale * batch_size, fft_size) if batch_size > 1 else (batch_scale, fft_size)
     run_forward_rfft_test(fft_shape=shape, dtype=dtype)

@@ -12,9 +12,6 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     void block_fft_c2c_1d_kernel(typename FFT::value_type* data) {
     using complex_type = typename FFT::value_type;
 
-    //size_t data_offset_input_bytes = sizeof(FFT::input_type) * blockIdx.x * FFT::ffts_per_block * FFT::input_length;
-    //complex_type* block_base_input = (complex_type*)(((char*)data) + data_offset_input_bytes);
-
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
@@ -23,9 +20,6 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Execute the FFT with shared memory
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
-
-    //size_t data_offset_output_bytes = sizeof(FFT::output_type) * blockIdx.x * FFT::ffts_per_block * FFT::output_length;
-    //complex_type* block_base_output = (complex_type*)(((char*)data) + data_offset_output_bytes);
 
     // Save results back to global memory
     example::io<FFT>::store(thread_data, data, local_fft_id);
@@ -58,14 +52,7 @@ inline void block_fft_c2c_1d_launcher(T* data, unsigned int outer_batch_count) {
     using complex_type = typename FFT::value_type;
     complex_type* data_t = reinterpret_cast<complex_type*>(data);
 
-    // printf("Launching kernel with %u blocks, each computing %u FFTs of size %u/%u\n",
-    //        outer_batch_count, FFT::ffts_per_block, FFT::input_length, FFT::output_length);
-
-    // printf("Block dimensions: (%u, %u, %u)\n", FFT::block_dim.x,
-    //        FFT::block_dim.y, FFT::block_dim.z);
-
-    // Launch the kernel and ensure no errors afterwards
-
+    // use the pytorch cuda stream to allow for graph capture
     cudaStream_t strm = at::cuda::getCurrentCUDAStream().stream();
 
     block_fft_c2c_1d_kernel<FFT>

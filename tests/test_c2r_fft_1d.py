@@ -9,6 +9,7 @@ import os
 
 
 INVERSE_FFT_CONFIGS = rfft1d.get_supported_configs()
+BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DATA_TYPES = [torch.float32]
 
 
@@ -55,7 +56,8 @@ def run_inverse_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
 
 @pytest.mark.parametrize("fft_size,batch_size", INVERSE_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
-def test_fft_c2r_1d(fft_size, batch_size, dtype):
+@pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
+def test_fft_c2r_1d(fft_size, batch_size, dtype, batch_scale):
     """Test inverse FFT for specific size, batch size, and dtype."""
-    shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
+    shape = (batch_scale * batch_size, fft_size) if batch_size > 1 else (batch_scale, fft_size)
     run_inverse_rfft_test(fft_shape=shape, dtype=dtype)

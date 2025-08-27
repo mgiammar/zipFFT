@@ -154,9 +154,6 @@ void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
             batch_size = 2;
             outer_batch_count /= 2;
         }
-
-        //printf("Batch size set to %u based on outer batch count of %u\n", batch_size, outer_batch_count);
-        
     } else {
         TORCH_CHECK(false, "Input tensor must be 1D or 2D. Got ", input.dim(),
                     "D.");

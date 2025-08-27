@@ -23,6 +23,7 @@ TYPE_MAP = {
 ALL_CONFIGS = cfft1d.get_supported_configs()
 FORWARD_FFT_CONFIGS = [(cfg[0], cfg[1]) for cfg in ALL_CONFIGS if cfg[2] is True]
 INVERSE_FFT_CONFIGS = [(cfg[0], cfg[1]) for cfg in ALL_CONFIGS if cfg[2] is False]
+BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DATA_TYPES = [torch.complex64]
 
 def run_forward_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
@@ -52,31 +53,6 @@ def run_forward_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
     print("Torch FFT result (first element):", x0_numpy.shape)
     print("zipFFT FFT result (first element):", x1_numpy.shape)
 
-    # save the results as images for visual comparison
-
-    plt.figure(figsize=(12, 6))
-    plt.subplot(1, 2, 1)
-    plt.title("Torch FFT Magnitude")
-    plt.imshow(np.abs(x0_numpy), aspect='auto', cmap='viridis')
-    plt.colorbar()
-    plt.subplot(1, 2, 2)
-    plt.title("zipFFT FFT Magnitude")
-    plt.imshow(np.abs(x1_numpy), aspect='auto', cmap='viridis')
-    plt.colorbar()
-    plt.savefig("fft_comparison.png")
-
-    np.save("torch_fft_result.npy", x0_numpy)
-    np.save("zipfft_fft_result.npy", x1_numpy)
-
-    # also show the difference
-
-    plt.figure(figsize=(6, 6))
-    plt.title("Difference in Magnitude")
-    plt.imshow(np.abs(x0_numpy - x1_numpy), aspect='auto', cmap='viridis')
-    plt.colorbar()
-    plt.savefig("fft_difference.png")
-
-
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
 
@@ -102,20 +78,18 @@ def run_inverse_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
 
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
+@pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("dtype", DATA_TYPES)
+@pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
+def test_fft_c2c_1d(fft_size, batch_size, dtype, batch_scale):
+    """Test forward FFT for specific size, batch size, and dtype."""
+    shape = (batch_size * batch_scale, fft_size) if batch_size > 1 else (batch_scale, fft_size)
+    run_forward_fft_test(fft_shape=shape, dtype=dtype)
 
-run_forward_fft_test(fft_shape=(40, 64), dtype=torch.complex64)
-
-# @pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
-# @pytest.mark.parametrize("dtype", DATA_TYPES)
-# def test_fft_c2c_1d(fft_size, batch_size, dtype):
-#     """Test forward FFT for specific size, batch size, and dtype."""
-#     shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
-#     run_forward_fft_test(fft_shape=shape, dtype=dtype)
-
-
-# @pytest.mark.parametrize("fft_size,batch_size", INVERSE_FFT_CONFIGS)
-# @pytest.mark.parametrize("dtype", DATA_TYPES)
-# def test_ifft_c2c_1d(fft_size, batch_size, dtype):
-#     """Test inverse FFT for specific size, batch size, and dtype."""
-#     shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
-#     run_inverse_fft_test(fft_shape=shape, dtype=dtype)
+@pytest.mark.parametrize("fft_size,batch_size", INVERSE_FFT_CONFIGS)
+@pytest.mark.parametrize("dtype", DATA_TYPES)
+@pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
+def test_ifft_c2c_1d(fft_size, batch_size, dtype, batch_scale):
+    """Test inverse FFT for specific size, batch size, and dtype."""
+    shape = (batch_size * batch_scale, fft_size) if batch_size > 1 else (batch_scale, fft_size)
+    run_inverse_fft_test(fft_shape=shape, dtype=dtype)
