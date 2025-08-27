@@ -63,11 +63,13 @@ namespace example {
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads and stores for 2d FFTs with shared memory used, based on stride and batches for specific dimension (inner most)
-        template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
+        template<typename InputOutputType>
         static inline __device__ void load_strided(const InputOutputType* input,
                                                    complex_type*          thread_data,
                                                    InputOutputType*       shared_memory,
-                                                   unsigned int           local_fft_id) {
+                                                   unsigned int           local_fft_id,
+                                                   unsigned int stride_len,
+                                                   unsigned int batches) {
             const unsigned int tid          = threadIdx.x + blockDim.x * threadIdx.y;
             const unsigned int tidx         = tid / blockDim.y;
             const unsigned int tidy         = tid % blockDim.y;
@@ -75,12 +77,12 @@ namespace example {
             const unsigned int batch_offset = batch_offset_strided(tidy);
             const unsigned int bid          = batch_id(tidy);
             // Get stride, this shows how elements from batch should be split between threads
-            const unsigned int stride       = Stride * FFT::stride;
-            unsigned int       index        = batch_offset + (tidx * Stride);
+            const unsigned int stride       = stride_len * FFT::stride;
+            unsigned int       index        = batch_offset + (tidx * stride_len);
             unsigned int       smem_index   = tidx + tidy * blockDim.x;
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
                 if ((i * FFT::stride + tidx) < cufftdx::size_of<FFT>::value) {
-                    if (bid < Batches) {
+                    if (bid < batches) {
                         shared_memory[smem_index] = input[index];
                     }
                     index += stride;
@@ -97,11 +99,13 @@ namespace example {
             }
         }
 
-        template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
+        template<typename InputOutputType>
         static inline __device__ void store_strided(const complex_type* thread_data,
                                                     InputOutputType*    shared_memory,
                                                     InputOutputType*    output,
-                                                    unsigned int        local_fft_id) {
+                                                    unsigned int        local_fft_id,
+                                                    unsigned int stride_len,
+                                                    unsigned int batches) {
             __syncthreads();
             unsigned int smem_index = threadIdx.x + threadIdx.y * blockDim.x;
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
@@ -116,12 +120,12 @@ namespace example {
             const unsigned int tidy         = tid % blockDim.y;
             const unsigned int batch_offset = batch_offset_strided(tidy);
             const unsigned int bid          = batch_id(tidy);
-            const unsigned int stride       = Stride * FFT::stride;
-            unsigned int       index        = batch_offset + (tidx * Stride);
+            const unsigned int stride       = stride_len * FFT::stride;
+            unsigned int       index        = batch_offset + (tidx * stride_len);
             smem_index                      = tidx + tidy * blockDim.x;
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
                 if ((i * FFT::stride + tidx) < cufftdx::size_of<FFT>::value) {
-                    if (bid < Batches) {
+                    if (bid < batches) {
                         output[index] = shared_memory[smem_index];
                     }
                     index += stride;
