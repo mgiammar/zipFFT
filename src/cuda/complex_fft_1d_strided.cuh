@@ -6,6 +6,8 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 
+#include <iostream>
+
 // --- Kernel Definition ---
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block) __global__
@@ -17,13 +19,13 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    example::io_strided<FFT>::load_strided(data, thread_data, shared_mem, local_fft_id, stride_length, stride_length);
+    example::io_strided<FFT>::load_strided_smem(data, thread_data, shared_mem, local_fft_id, stride_length);
 
     // Execute the FFT with shared memory
     FFT().execute(thread_data, shared_mem);
 
     // Save results back to global memory
-    example::io_strided<FFT>::store_strided(thread_data, shared_mem, data, local_fft_id, stride_length, stride_length);
+    example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, stride_length);
 }
 
 // --- Launcher Definition ---
@@ -56,8 +58,10 @@ inline void block_fft_c2c_1d_launcher(T* data, unsigned int inner_batch_count, u
     // use the pytorch cuda stream to allow for graph capture
     cudaStream_t strm = at::cuda::getCurrentCUDAStream().stream();
 
+    dim3 grid_dims(outer_batch_count, inner_batch_count);
+
     block_fft_c2c_1d_kernel<FFT>
-        <<<outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(data_t, inner_batch_count);
+        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(data_t, inner_batch_count);
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
     //CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }

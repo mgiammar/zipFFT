@@ -25,6 +25,8 @@
 #include <tuple>
 #include <vector>
 
+#include <stdio.h>
+
 #include "complex_fft_1d_strided.cuh"
 
 // FFT configuration structure
@@ -132,7 +134,7 @@ std::vector<std::tuple<int, int, bool>> get_supported_fft_configs() {
 }
 
 // Common implementation function
-void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
+void fft_c2c_1d_padded_impl(torch::Tensor input, bool is_forward) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -176,18 +178,18 @@ void fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
     fft_func(data_ptr, inner_batch_count, outer_batch_count);
 }
 
-void fft_c2c_1d(torch::Tensor input) {
-    fft_c2c_1d_impl(input, true);  // Forward FFT
+void fft_c2c_1d_padded(torch::Tensor input) {
+    fft_c2c_1d_padded_impl(input, true);  // Forward FFT
 }
 
-void ifft_c2c_1d(torch::Tensor input) {
-    fft_c2c_1d_impl(input, false);  // Inverse FFT
+void ifft_c2c_1d_padded(torch::Tensor input) {
+    fft_c2c_1d_padded_impl(input, false);  // Inverse FFT
 }
 
 PYBIND11_MODULE(cfft1d_strided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT operations using cuFFTDx";
-    m.def("fft", &fft_c2c_1d, "In-place 1D C2C FFT using cuFFTDx.");
-    m.def("ifft", &ifft_c2c_1d, "In-place 1D C2C IFFT using cuFFTDx.");
+    m.def("fft", &fft_c2c_1d_padded, "In-place 1D C2C FFT using cuFFTDx.");
+    m.def("ifft", &ifft_c2c_1d_padded, "In-place 1D C2C IFFT using cuFFTDx.");
     m.def("get_supported_configs", &get_supported_fft_configs,
           "Get list of supported (fft_size, batch_size, is_forward) "
           "configurations");
