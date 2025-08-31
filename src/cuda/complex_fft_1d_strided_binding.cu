@@ -41,39 +41,121 @@ struct ComplexFFTConfig1D {
     }
 };
 
+
+std::pair<unsigned int, unsigned int> factorizePowerOfTwo_bitwise(int n) {
+    if (n == 0) {
+        return {0, 0};
+    }
+
+    int k = 1;
+    // Continue as long as the last bit is 0 (i.e., the number is even)
+    while ((n & 1) == 0) {
+        n >>= 1; // Right shift is equivalent to dividing by 2
+        k = k << 1; // Multiply k by 2
+    }
+    return {k, n};
+}
+
+std::pair<unsigned int, unsigned int> get_supported_batches_runtime(unsigned int FFTSize, unsigned int inner_batches) {
+    auto factors = factorizePowerOfTwo_bitwise(inner_batches);
+    unsigned int batch_size = 1;
+
+    if (FFTSize <= 256 && factors.first >= 32) {
+        factors.first = factors.first / 32;
+        batch_size = 32;
+    } else if (FFTSize <= 512 && factors.first >= 16) {
+        factors.first = factors.first / 16;
+        batch_size = 16;
+    } else if (FFTSize <= 1024 && factors.first >= 8) {
+        factors.first = factors.first / 8;
+        batch_size = 8;
+    } else if (FFTSize <= 2048 && factors.first >= 4) {
+        factors.first = factors.first / 4;
+        batch_size = 4;
+    } else if (FFTSize <= 4096 && factors.first >= 2) {
+        factors.first = factors.first / 2;
+        batch_size = 2;
+    }
+
+    return {factors.first * factors.second, batch_size};
+}
+
+// --- END OF CORRECTED CODE ---
+
 // Define supported FFT configurations at the top of the file for easy
 // modification Format: (fft_size, batch_size, is_forward)
-static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 14>
+static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 64>
     SUPPORTED_FFT_CONFIGS = {{// Forward FFT configurations
                               {64, 1, true},
-                              //{64, 2, true},
-                              {128, 1, true},
-                              //{128, 2, true},
-                              {256, 1, true},
-                              //{256, 2, true},
-                              {512, 1, true},
-                              //{512, 2, true},
-                              {1024, 1, true},
-                              //{1024, 2, true},
-                              {2048, 1, true},
-                              //{2048, 2, true},
-                              {4096, 1, true},
-                              //{4096, 2, true},
-                              // Inverse FFT configurations
                               {64, 1, false},
-                              //{64, 2, false},
+                              {64, 2, true},
+                              {64, 2, false},
+                              {64, 4, true},
+                              {64, 4, false},
+                              {64, 8, true},
+                              {64, 8, false},
+                              {64, 16, true},
+                              {64, 16, false},
+                              {64, 32, true},
+                              {64, 32, false},
+
+                              {128, 1, true},
                               {128, 1, false},
-                              //{128, 2, false},
+                              {128, 2, true},
+                              {128, 2, false},
+                              {128, 4, true},
+                              {128, 4, false},
+                              {128, 8, true},
+                              {128, 8, false},
+                              {128, 16, true},
+                              {128, 16, false},
+                              {128, 32, true},
+                              {128, 32, false},
+
+                              {256, 1, true},
                               {256, 1, false},
-                              //{256, 2, false},
+                              {256, 2, true},
+                              {256, 2, false},
+                              {256, 4, true},
+                              {256, 4, false},
+                              {256, 8, true},
+                              {256, 8, false},
+                              {256, 16, true},
+                              {256, 16, false},
+                              {256, 32, true},
+                              {256, 32, false},
+
+                              {512, 1, true},
                               {512, 1, false},
-                              //{512, 2, false},
+                              {512, 2, true},
+                              {512, 2, false},
+                              {512, 4, true},
+                              {512, 4, false},
+                              {512, 8, true},
+                              {512, 8, false},
+                              {512, 16, true},
+                              {512, 16, false},
+
+                              {1024, 1, true},
                               {1024, 1, false},
-                              //{1024, 2, false},
+                              {1024, 2, true},
+                              {1024, 2, false},
+                              {1024, 4, true},
+                              {1024, 4, false},
+                              {1024, 8, true},
+                              {1024, 8, false},
+
+                              {2048, 1, true},
                               {2048, 1, false},
-                              //{2048, 2, false},
-                              {4096, 1, false}
-                              //{4096, 2, false}
+                              {2048, 2, true},
+                              {2048, 2, false},
+                              {2048, 4, true},
+                              {2048, 4, false},
+
+                              {4096, 1, true},
+                              {4096, 1, false},
+                              {4096, 2, true},
+                              {4096, 2, false}
                             }};
 
 // Template dispatch functions for each supported configuration
@@ -151,14 +233,11 @@ void fft_c2c_1d_padded_impl(torch::Tensor input, bool is_forward) {
         batch_size = 1;
         outer_batch_count = 1;
     } else if (input.dim() == 3) {
-        inner_batch_count = input.size(2);
         fft_size = input.size(1);
-        batch_size = 1;
+        auto batch_size_pair = get_supported_batches_runtime(fft_size, input.size(2));
+        inner_batch_count = batch_size_pair.first;
+        batch_size = batch_size_pair.second;
         outer_batch_count = input.size(0);
-        //if(outer_batch_count % 2 == 0) {
-        //    batch_size = 2;
-        //    outer_batch_count /= 2;
-        //}
     } else {
         TORCH_CHECK(false, "Input tensor must be 2D or 3D. Got ", input.dim(),
                     "D.");

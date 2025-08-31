@@ -61,11 +61,9 @@ def run_forward_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
 
     # save diffs to a .npy file for further analysis
 
-    #np.save("fft_diff.npy", x0_numpy[0] - x1_numpy[0])
-
+    # np.save("fft_diff.npy", x0_numpy[0] - x1_numpy[0])
 
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
-
 
 def run_inverse_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
     """Runs a single inverse FFT test for a given size and dtype.
@@ -105,7 +103,7 @@ def run_inverse_fft_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
 
     assert torch.allclose(x0, x1, atol=1e-4), "FFT results do not match ground truth"
 
-#run_inverse_fft_test(fft_shape=(128, 64, 256), dtype=torch.complex64)
+#run_forward_fft_test(fft_shape=(15, 128, 128), dtype=torch.complex64)
 
 @pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)

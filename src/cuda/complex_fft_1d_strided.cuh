@@ -11,7 +11,7 @@
 // --- Kernel Definition ---
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void block_fft_c2c_1d_kernel(typename FFT::value_type* data, unsigned int stride_length) {
+    void block_fft_c2c_1d_kernel(typename FFT::value_type* data, unsigned int inner_batch_count) {
     using complex_type = typename FFT::value_type;
 
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
@@ -19,13 +19,13 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    example::io_strided<FFT>::load_strided_smem(data, thread_data, shared_mem, local_fft_id, stride_length);
+    example::io_strided<FFT>::load_strided_smem(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block);
 
     // Execute the FFT with shared memory
     FFT().execute(thread_data, shared_mem);
 
     // Save results back to global memory
-    example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, stride_length);
+    example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
 }
 
 // --- Launcher Definition ---

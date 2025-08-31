@@ -21,7 +21,7 @@ namespace example {
         static inline __device__ unsigned int batch_offset_strided(unsigned int local_fft_id, unsigned int stride_len) {
             //return batch_id(local_fft_id);
 
-            unsigned int global_fft_offset = blockIdx.y + blockIdx.x * stride_len * cufftdx::size_of<FFT>::value;
+            unsigned int global_fft_offset = local_fft_id + blockIdx.y * FFT::ffts_per_block + blockIdx.x * stride_len * cufftdx::size_of<FFT>::value;
             return global_fft_offset;
         }
 
