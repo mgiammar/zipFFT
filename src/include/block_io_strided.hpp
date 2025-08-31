@@ -97,6 +97,51 @@ namespace example {
             }
         }
 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Note: loads and stores for 2d FFTs with shared memory used, based on stride and batches for specific dimension (inner most)
+        template<typename InputOutputType>
+        static inline __device__ void load_strided_padded_smem(const InputOutputType* input,
+                                                   complex_type*          thread_data,
+                                                   InputOutputType*       shared_memory,
+                                                   unsigned int           local_fft_id,
+                                                   unsigned int stride_len,
+                                                   int s) {
+            const unsigned int tid          = threadIdx.x + blockDim.x * threadIdx.y;
+            const unsigned int tidx         = tid / blockDim.y;
+            const unsigned int tidy         = tid % blockDim.y;
+            // Calculate global offset of FFT batch
+            const unsigned int batch_offset = batch_offset_strided(tidy, stride_len);
+            // Get stride, this shows how elements from batch should be split between threads
+            const unsigned int stride       = stride_len * FFT::stride;
+            unsigned int       index        = batch_offset + (tidx * stride_len);
+            unsigned int       smem_index   = tidx + tidy * blockDim.x;
+            for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+                unsigned int fft_index = i * FFT::stride + tidx;
+
+                if (fft_index < s) {
+                    shared_memory[smem_index] = input[index];
+                    index += stride;
+                    smem_index += (blockDim.x * blockDim.y);
+                } else if (fft_index < cufftdx::size_of<FFT>::value) {
+                    shared_memory[smem_index] = get_zero<InputOutputType>();
+                    smem_index += (blockDim.x * blockDim.y);
+                }
+            }
+            __syncthreads();
+            smem_index = threadIdx.x + threadIdx.y * blockDim.x;
+            for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+                unsigned int fft_index = i * FFT::stride + threadIdx.x;
+
+                if (fft_index < s) {
+                    thread_data[i] = convert<complex_type>(shared_memory[smem_index]);
+                    smem_index += (blockDim.x * blockDim.y);
+                } else if (fft_index < cufftdx::size_of<FFT>::value) {
+                    thread_data[i] = get_zero<complex_type>();
+                    smem_index += (blockDim.x * blockDim.y);
+                }
+            }
+        }
+
         template<typename InputOutputType>
         static inline __device__ void store_strided_smem(const complex_type* thread_data,
                                                     InputOutputType*    shared_memory,

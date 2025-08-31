@@ -91,6 +91,16 @@ complex_conv_1d_strided_extension = CUDAExtension(
     libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
 )
 
+complex_conv_1d_strided_padded_extension = CUDAExtension(
+    name="zipfft.conv1d_strided_padded",  # Module name needs to match source code PYBIND11 statement
+    sources=["src/cuda/convolution_strided_padded_binding.cu"],
+    include_dirs=full_include_dirs,
+    extra_compile_args=DEFAULT_COMPILE_ARGS,
+    runtime_library_dirs=[torch_lib],
+    extra_link_args=[f"-Wl,-rpath,{torch_lib}"],         # belt & suspenders
+    libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
+)
+
 real_fft_1d_extension = CUDAExtension(
     name="zipfft.rfft1d",  # Module name needs to match source code PYBIND11 statement
     sources=["src/cuda/real_fft_1d_binding.cu"],
@@ -125,6 +135,7 @@ setup(
         complex_fft_1d_extension,
         complex_fft_1d_strided_extension,
         complex_conv_1d_strided_extension,
+        complex_conv_1d_strided_padded_extension,
         real_fft_1d_extension,
         padded_real_fft_1d_extension,
         # padded_real_convolution_1d_extension,

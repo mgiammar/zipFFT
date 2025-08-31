@@ -1,7 +1,7 @@
 """Simple complex-to-complex 1D FFT tests for cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import conv1d_strided
+from zipfft import conv1d_strided_padded
 
 import pytest
 import yaml
@@ -20,12 +20,12 @@ TYPE_MAP = {
     "complex128": torch.complex128,
 }
 
-ALL_CONFIGS = conv1d_strided.get_supported_configs()
+ALL_CONFIGS = conv1d_strided_padded.get_supported_configs()
 BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6]
 OUTER_BATCH_SCALE = [1, 2, 3, 4, 5, 6]
 DATA_TYPES = [torch.complex64]
 
-def run_convolution_strided_test(fft_shape: int, dtype: torch.dtype = torch.complex64):
+def run_convolution_strided_padded_test(fft_shape: int, dtype: torch.dtype, signal_length: int):
     """Runs a single forward FFT test for a given size and dtype.
 
     Parameters
@@ -43,13 +43,15 @@ def run_convolution_strided_test(fft_shape: int, dtype: torch.dtype = torch.comp
 
     x1 = x0.clone()
 
+    x0[:, signal_length:, :] = 0
+
     torch.fft.fft(x0, out=x0, dim=-2)
     x0 *= kernel
     torch.fft.ifft(x0, out=x0, dim=-2)
     x0 *= float(fft_shape[-2]) 
 
     # NOTE: This zipFFT function is in-place
-    conv1d_strided.conv(x1, kernel)
+    conv1d_strided_padded.conv(x1, kernel, signal_length)
 
     assert torch.allclose(x0, x1, atol=5e-3), "FFT results do not match ground truth"
 
@@ -61,5 +63,6 @@ def run_convolution_strided_test(fft_shape: int, dtype: torch.dtype = torch.comp
 def test_convolution_strided(fft_size, batch_size, dtype, batch_scale, outer_batch_scale):
     """Test forward FFT for specific size, batch size, and dtype."""
     shape = (outer_batch_scale, fft_size, batch_size * batch_scale) if batch_size > 1 else (outer_batch_scale, fft_size, batch_scale)
-    run_convolution_strided_test(fft_shape=shape, dtype=dtype)
+    signal_length = torch.randint(1, fft_size + 1, (1,)).item()
+    run_convolution_strided_padded_test(fft_shape=shape, dtype=dtype, signal_length=signal_length)
 
