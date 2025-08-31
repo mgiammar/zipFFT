@@ -12,7 +12,6 @@
  * Date:    28 July 2025
  */
 
-
 #include <c10/util/complex.h>
 #include <pybind11/pybind11.h>
 #include <stdio.h>
@@ -82,6 +81,8 @@ std::pair<unsigned int, unsigned int> get_supported_batches_runtime(unsigned int
 
 
 // --- END OF CORRECTED CODE ---
+
+
 
 // Define supported FFT configurations at the top of the file for easy
 // modification Format: (fft_size, batch_size, is_forward)

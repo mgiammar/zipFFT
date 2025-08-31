@@ -20,18 +20,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
     example::io_strided<FFT>::load_strided_smem(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block);
-    
-    __syncthreads();
 
     // Execute the FFT with shared memory
     FFT().execute(thread_data, shared_mem);
-    
+
     __syncthreads();
 
     complex_type kernel_thread_data[FFT::storage_size];
     example::io_strided<FFT>::load_strided_smem(kernel, kernel_thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block);
-
-    __syncthreads();
 
     // complex multiplication in the frequency domain
     for (unsigned int i = 0; i < FFT::elements_per_thread; ++i) {
@@ -46,16 +42,16 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
         complex_type c;
         c.x = a.x * b.x - a.y * b.y;
         c.y = a.x * b.y + a.y * b.x;
-        
+
         thread_data[i].x = c.x;
         thread_data[i].y = c.y;
     }
 
-    __syncthreads();
+    //__syncthreads();
 
     FFT_inv().execute(thread_data, shared_mem);
 
-    __syncthreads();
+    //__syncthreads();
 
     // Save results back to global memory
     example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
