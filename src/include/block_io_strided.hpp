@@ -27,39 +27,37 @@ namespace example {
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads / stores for 2d FFTs, based on stride and batches for specific dimension (inner most)
-        template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
+        template<typename InputOutputType>
         static inline __device__ void load_strided(const InputOutputType* input,
                                                    complex_type*          thread_data,
-                                                   unsigned int           local_fft_id) {
+                                                   unsigned int           local_fft_id,
+                                                   unsigned int stride_len) {
             // Calculate global offset of FFT batch
-            const unsigned int batch_offset = batch_offset_strided(local_fft_id, Stride);
+            const unsigned int batch_offset = batch_offset_strided(local_fft_id, stride_len);
             const unsigned int bid          = batch_id(local_fft_id);
             // Get stride, this shows how elements from batch should be split between threads
-            const unsigned int stride       = Stride * FFT::stride;
-            unsigned int       index        = batch_offset + (threadIdx.x * Stride);
+            const unsigned int stride       = stride_len * FFT::stride;
+            unsigned int       index        = batch_offset + (threadIdx.x * stride_len);
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
                 if ((i * FFT::stride + threadIdx.x) < cufftdx::size_of<FFT>::value) {
-                    if (bid < Batches) {
-                        thread_data[i] = convert<complex_type>(input[index]);
-                    }
+                    thread_data[i] = convert<complex_type>(input[index]);
                     index += stride;
                 }
             }
         }
 
-        template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
+        template<typename InputOutputType>
         static inline __device__ void store_strided(const complex_type* thread_data,
                                                     InputOutputType*    output,
-                                                    unsigned int        local_fft_id) {
-            const unsigned int batch_offset = batch_offset_strided(local_fft_id, Stride);
+                                                    unsigned int        local_fft_id,
+                                                    unsigned int stride_len) {
+            const unsigned int batch_offset = batch_offset_strided(local_fft_id, stride_len);
             const unsigned int bid          = batch_id(local_fft_id);
-            const unsigned int stride       = Stride * FFT::stride;
-            unsigned int       index        = batch_offset + (threadIdx.x * Stride);
+            const unsigned int stride       = stride_len * FFT::stride;
+            unsigned int       index        = batch_offset + (threadIdx.x * stride_len);
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
                 if ((i * FFT::stride + threadIdx.x) < cufftdx::size_of<FFT>::value) {
-                    if (bid < Batches) {
-                        output[index] = convert<InputOutputType>(thread_data[i]);
-                    }
+                    output[index] = convert<InputOutputType>(thread_data[i]);
                     index += stride;
                 }
             }
