@@ -122,6 +122,16 @@ padded_real_fft_1d_extension = CUDAExtension(
     libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
 )
 
+padded_complex_fft_1d_extension = CUDAExtension(
+    name="zipfft.padded_fft1d",  # Module name needs to match source code
+    sources=["src/cuda/padded_complex_fft_1d_binding.cu"],
+    include_dirs=full_include_dirs,
+    extra_compile_args=DEFAULT_COMPILE_ARGS,
+    runtime_library_dirs=[torch_lib],
+    extra_link_args=[f"-Wl,-rpath,{torch_lib}"],         # belt & suspenders
+    libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
+)
+
 # padded_real_convolution_1d_extension = CUDAExtension(
 #     name="zipfft.padded_rconv1d",
 #     sources=["src/cuda/padded_real_conv_1d.cu"],
@@ -138,6 +148,7 @@ setup(
         complex_conv_1d_strided_padded_extension,
         real_fft_1d_extension,
         padded_real_fft_1d_extension,
+        padded_complex_fft_1d_extension
         # padded_real_convolution_1d_extension,
     ],
     cmdclass={"build_ext": BuildExtension},

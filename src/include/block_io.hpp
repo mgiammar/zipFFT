@@ -124,6 +124,50 @@ namespace example {
             }
         }
 
+        template<bool InputInRRIILayout = false, typename RegisterType, typename IOType, class LoadOp = example::identity>
+        static inline __device__
+            CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+            load_padded_layered(const IOType* input,
+                 RegisterType* thread_data,
+                 unsigned int  local_fft_id,
+                 unsigned int signal_length,
+                 unsigned int active_layers,
+                 unsigned int extra_layers,
+                 LoadOp op = {}) {
+            static constexpr bool needs_half2_format_conversion = cufftdx::type_of<FFT>::value != cufftdx::fft_type::r2c &&
+                                                                  std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+            using input_t                                       = typename FFT::input_type;
+
+            // Calculate global offset of FFT batch
+            unsigned int global_fft_id = blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
+            global_fft_id = global_fft_id + extra_layers * (global_fft_id / active_layers); // skip extra layers
+            const unsigned int offset = FFT::input_length * global_fft_id;
+            // Get stride, this shows how elements from batch should be split between threads
+            const unsigned int stride = FFT::stride;
+            unsigned int       index  = offset + threadIdx.x;
+            for (unsigned int i = 0; i < FFT::input_ept; ++i) {
+                unsigned int fft_index = i * stride + threadIdx.x;
+
+                if (fft_index < signal_length) {
+                    if constexpr (needs_half2_format_conversion) {
+                        reinterpret_cast<input_t*>(thread_data)[i] =
+                            op(__io::convert_to_rrii<InputInRRIILayout>(reinterpret_cast<const input_t*>(input)[index]));
+                    } else {
+                        reinterpret_cast<input_t*>(thread_data)[i] = op(reinterpret_cast<const input_t*>(input)[index]);
+                    }
+                    index += stride;
+                } else if (fft_index < FFT::input_length) {
+                    if constexpr (needs_half2_format_conversion) {
+                        reinterpret_cast<input_t*>(thread_data)[i] =
+                            op(__io::convert_to_rrii<InputInRRIILayout>(get_zero<input_t>()));
+                    } else {
+                        reinterpret_cast<input_t*>(thread_data)[i] = op(get_zero<input_t>());
+                    }
+                    index += stride;
+                }
+            }
+        }
+
         // Function assumes that values in thread_data are in RRII layout.
         // If OutputInRRIILayout is false, values are saved into output in RIRI layout; otherwise - in RRII.
         template<bool OutputInRRIILayout = false, typename RegisterType, typename IOType, class StoreOp = example::identity>
@@ -138,6 +182,38 @@ namespace example {
             using output_t                                       = typename FFT::output_type;
 
             const unsigned int offset = output_batch_offset(local_fft_id);
+            const unsigned int stride = FFT::stride;
+            unsigned int       index  = offset + threadIdx.x;
+
+            for (int i = 0; i < FFT::output_ept; ++i) {
+                if ((i * stride + threadIdx.x) < FFT::output_length) {
+                    if constexpr (needs_half2_format_conversion) {
+                        reinterpret_cast<output_t*>(output)[index] =
+                            op(__io::convert_to_riri<OutputInRRIILayout>(reinterpret_cast<const output_t*>(thread_data)[i]));
+                    } else {
+                        reinterpret_cast<output_t*>(output)[index] = op(reinterpret_cast<const output_t*>(thread_data)[i]);
+                    }
+                    index += stride;
+                }
+            }
+        }
+
+        template<bool OutputInRRIILayout = false, typename RegisterType, typename IOType, class StoreOp = example::identity>
+        static inline __device__
+            CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+            store_layered(const RegisterType* thread_data,
+                  IOType*             output,
+                  unsigned int        local_fft_id,
+                  unsigned int       active_layers,
+                  unsigned int       extra_layers,
+                  StoreOp op = {}) {
+            static constexpr bool needs_half2_format_conversion = cufftdx::type_of<FFT>::value != cufftdx::fft_type::c2r &&
+                                                                  std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+            using output_t                                       = typename FFT::output_type;
+                
+            unsigned int global_fft_id = blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
+            global_fft_id = global_fft_id + extra_layers * (global_fft_id / active_layers); // skip extra layers
+            const unsigned int offset = FFT::output_length * global_fft_id;
             const unsigned int stride = FFT::stride;
             unsigned int       index  = offset + threadIdx.x;
 
