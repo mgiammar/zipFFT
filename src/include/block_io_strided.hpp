@@ -97,6 +97,33 @@ namespace example {
             }
         }
 
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Note: loads / stores for 2d FFTs, based on stride and batches for specific dimension (inner most)
+        template<typename InputOutputType>
+        static inline __device__ void load_transposed_kernel(const InputOutputType* input,
+                                                   complex_type*          thread_data) {
+            // Calculate global offset of FFT batch
+            const size_t stride       = blockDim.x * blockDim.y * gridDim.x * gridDim.y;
+            size_t       index        = threadIdx.x + blockDim.x * threadIdx.y;
+            index += (blockIdx.x + gridDim.x * blockIdx.y) * blockDim.x * blockDim.y;
+            for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+                thread_data[i] = convert<complex_type>(input[index]);
+                index += stride;
+            }
+        }
+
+        template<typename InputOutputType>
+        static inline __device__ void store_transposed_kernel(const complex_type* thread_data,
+                                                    InputOutputType*    output) {
+            const size_t stride       = blockDim.x * blockDim.y * gridDim.x * gridDim.y;
+            size_t       index        = threadIdx.x + blockDim.x * threadIdx.y;
+            index += (blockIdx.x + gridDim.x * blockIdx.y) * blockDim.x * blockDim.y;
+            for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+                output[index] = convert<InputOutputType>(thread_data[i]);
+                index += stride;
+            }
+        }
+
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads and stores for 2d FFTs with shared memory used, based on stride and batches for specific dimension (inner most)
         template<typename InputOutputType>

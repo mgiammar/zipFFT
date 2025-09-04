@@ -109,6 +109,7 @@ constexpr auto make_dispatch_table(std::index_sequence<Is...>) {
           }()}...}};
 }
 
+
 // Create the dispatch table for the supported FFT configurations
 static const auto forward_dispatch_table = make_dispatch_table(
     std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});

@@ -86,7 +86,7 @@ inline void padded_block_complex_fft_1d_launcher(InputType* data,
 
     // Ensure no errors afterwards
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
-    CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+    //CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }
 
 // --- Public API Function Template Definition ---
