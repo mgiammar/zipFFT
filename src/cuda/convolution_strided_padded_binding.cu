@@ -163,12 +163,16 @@ static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 64>
 
 // Template dispatch functions for each supported configuration
 template <unsigned int FFTSize, unsigned int BatchSize, bool kernel_transpose>
-size_t dispatch_fft(float2* data, float2* kernel, unsigned int inner_batch_count, unsigned int outer_batch_count, int s, bool get_params) {
+size_t dispatch_fft(float2* data, float2* kernel, unsigned int inner_batch_count, unsigned int outer_batch_count, int s, bool get_params, bool disable_transpose) {
     if (get_params) {
         return block_convolution_transposed_kernel_size<float2, FFTSize, 8u, BatchSize, kernel_transpose>(inner_batch_count, outer_batch_count);
     }
 
-    block_convolution_strided_padded<float2, FFTSize, 8u, BatchSize, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s);
+    if (disable_transpose) {
+        block_convolution_strided_padded<float2, FFTSize, 8u, BatchSize, kernel_transpose, true>(data, kernel, inner_batch_count, outer_batch_count, s);
+    } else {
+        block_convolution_strided_padded<float2, FFTSize, 8u, BatchSize, kernel_transpose, false>(data, kernel, inner_batch_count, outer_batch_count, s);
+    }
 
     return 0; // Dummy return to satisfy compiler
 }
@@ -177,7 +181,7 @@ size_t dispatch_fft(float2* data, float2* kernel, unsigned int inner_batch_count
 template <std::size_t... Is>
 constexpr auto make_dispatch_table(std::index_sequence<Is...>) {
     return std::array<  
-        std::pair<ComplexFFTConfig1D, std::function<size_t(float2*, float2*, unsigned int, unsigned int, int, bool)>>,
+        std::pair<ComplexFFTConfig1D, std::function<size_t(float2*, float2*, unsigned int, unsigned int, int, bool, bool)>>,
         sizeof...(Is)>{
         {{ComplexFFTConfig1D{std::get<0>(SUPPORTED_FFT_CONFIGS[Is]),
                              std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -193,7 +197,7 @@ static const auto dispatch_table = make_dispatch_table(
     std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
 // Create lookup function with compile-time dispatch table
-std::function<size_t(float2*, float2*, unsigned int, unsigned int, int, bool)> get_fft_function(unsigned int fft_size, unsigned int batch_size, bool kernel_transpose) {
+std::function<size_t(float2*, float2*, unsigned int, unsigned int, int, bool, bool)> get_fft_function(unsigned int fft_size, unsigned int batch_size, bool kernel_transpose) {
     // Find matching configuration
     for (const auto& entry : dispatch_table) {
         if (entry.first.fft_size == fft_size &&
@@ -222,7 +226,7 @@ std::vector<std::tuple<int, int, bool>> get_supported_conv_configs() {
 }
 
 // Common implementation function
-void conv_c2c_1d_strided_padded(torch::Tensor input, torch::Tensor kernel, int s) {
+void conv_c2c_1d_strided_padded(torch::Tensor input, torch::Tensor kernel, int s, bool disable_transpose) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -268,7 +272,7 @@ void conv_c2c_1d_strided_padded(torch::Tensor input, torch::Tensor kernel, int s
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    fft_func(data_ptr, kernel_ptr, inner_batch_count, outer_batch_count, s, false);
+    fft_func(data_ptr, kernel_ptr, inner_batch_count, outer_batch_count, s, false, disable_transpose);
 }
 
 void conv_c2c_1d_strided_padded_kernel_transpose(torch::Tensor kernel, torch::Tensor kernel_transpose) {
@@ -317,7 +321,7 @@ void conv_c2c_1d_strided_padded_kernel_transpose(torch::Tensor kernel, torch::Te
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    fft_func(kernel_ptr, kernel_transpose_ptr, inner_batch_count, outer_batch_count, fft_size, false);
+    fft_func(kernel_ptr, kernel_transpose_ptr, inner_batch_count, outer_batch_count, fft_size, false, false);
 }
 
 
@@ -361,7 +365,7 @@ size_t conv_c2c_1d_strided_padded_kernel_size(torch::Tensor input) {
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    return fft_func(data_ptr, data_ptr, inner_batch_count, outer_batch_count, 0, true);
+    return fft_func(data_ptr, data_ptr, inner_batch_count, outer_batch_count, 0, true, false);
 }
 
 PYBIND11_MODULE(conv1d_strided_padded, m) {  // First arg needs to match name in setup.py

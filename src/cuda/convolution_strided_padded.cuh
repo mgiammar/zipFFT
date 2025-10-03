@@ -9,7 +9,7 @@
 #include <iostream>
 
 // --- Kernel Definition ---
-template <class FFT, class FFT_inv, bool kernel_transpose>
+template <class FFT, class FFT_inv, bool kernel_transpose, bool disable_transpose>
 __launch_bounds__(FFT::max_threads_per_block) __global__
     void block_convolution_strided_padded_kernel(typename FFT::value_type* data, typename FFT::value_type* kernel, unsigned int inner_batch_count, int s) {
     using complex_type = typename FFT::value_type;
@@ -19,7 +19,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    example::io_strided<FFT>::load_strided_padded_smem(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block, s);
+    example::io_strided<FFT>::load_strided_padded_smem<FFT::value_type, disable_transpose>(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block, s);
 
     if constexpr (!kernel_transpose) {
         // Execute the FFT with shared memory
@@ -50,7 +50,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
         FFT_inv().execute(thread_data, shared_mem);
 
-        example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
+        example::io_strided<FFT>::store_strided_smem<FFT::value_type, disable_transpose>(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
     } else {
         example::io_strided<FFT>::store_transposed_kernel(thread_data, kernel);
     }
@@ -61,7 +61,8 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 template <unsigned int Arch, typename T, unsigned int FFTSize,
           unsigned int elements_per_thread,
           unsigned int FFTs_per_block,
-          bool kernel_transpose>
+          bool kernel_transpose,
+          bool disable_transpose>
 inline void block_convolution_strided_padded_launcher(T* data, T* kernel, unsigned int inner_batch_count, unsigned int outer_batch_count, int s) {
     using namespace cufftdx;
 
@@ -78,7 +79,7 @@ inline void block_convolution_strided_padded_launcher(T* data, T* kernel, unsign
 
     // Increase shared memory size, if needed
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        block_convolution_strided_padded_kernel<FFT, FFT_inv, kernel_transpose>,
+        block_convolution_strided_padded_kernel<FFT, FFT_inv, kernel_transpose, disable_transpose>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
     // Cast to cuFFTDx complex type form the FFT struct
@@ -91,7 +92,7 @@ inline void block_convolution_strided_padded_launcher(T* data, T* kernel, unsign
 
     dim3 grid_dims(outer_batch_count, inner_batch_count);
 
-    block_convolution_strided_padded_kernel<FFT, FFT_inv, kernel_transpose>
+    block_convolution_strided_padded_kernel<FFT, FFT_inv, kernel_transpose, disable_transpose>
         <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(data_t, kernel_t, inner_batch_count, s);
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 }
@@ -112,7 +113,7 @@ inline void block_convolution_strided_padded_launcher(T* data, T* kernel, unsign
  * @return int Returns 0 on success, or error code on failure.
  */
 template <typename T, unsigned int FFTSize,
-          unsigned int elements_per_thread, unsigned int FFTs_per_block, bool kernel_transpose>
+          unsigned int elements_per_thread, unsigned int FFTs_per_block, bool kernel_transpose, bool disable_transpose>
 int block_convolution_strided_padded(T* data, T* kernel, unsigned int inner_batch_count,  unsigned int outer_batch_count, int s) {
     auto arch = example::get_cuda_device_arch();
 
@@ -123,12 +124,12 @@ int block_convolution_strided_padded(T* data, T* kernel, unsigned int inner_batc
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
-        case 800: block_convolution_strided_padded_launcher<800, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
-        case 860: block_convolution_strided_padded_launcher<860, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
-        case 870: block_convolution_strided_padded_launcher<870, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
-        case 890: block_convolution_strided_padded_launcher<890, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
-        case 900: block_convolution_strided_padded_launcher<900, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
-        case 1200: block_convolution_strided_padded_launcher<900, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break; 
+        case 800: block_convolution_strided_padded_launcher<800, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
+        case 860: block_convolution_strided_padded_launcher<860, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
+        case 870: block_convolution_strided_padded_launcher<870, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
+        case 890: block_convolution_strided_padded_launcher<890, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
+        case 900: block_convolution_strided_padded_launcher<900, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break;
+        case 1200: block_convolution_strided_padded_launcher<900, T, FFTSize, elements_per_thread, FFTs_per_block, kernel_transpose, disable_transpose>(data, kernel, inner_batch_count, outer_batch_count, s); break; 
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "
