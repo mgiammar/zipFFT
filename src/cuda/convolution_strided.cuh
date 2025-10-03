@@ -54,7 +54,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     //__syncthreads();
 
     // Save results back to global memory
-    example::io_strided<FFT>::store_strided_smem(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
+    example::io_strided<FFT>::store_strided_smem<FFT::value_type, false>(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block);
 }
 
 // --- Launcher Definition ---
