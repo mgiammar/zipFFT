@@ -19,6 +19,7 @@
 struct FFTParams {
     float2* data;
     unsigned int outer_batch_count;
+    bool direction;
 };
 
 template <class FFT>
@@ -42,25 +43,41 @@ void dispatch_function(void* params, cudaStream_t strm) {
 
     using namespace cufftdx;
 
-    using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+    if(fft_params->direction) {
+        using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+                    Direction<fft_direction::inverse>() +
+                    Precision<float>() +
+                    ElementsPerThread<8u>() +
+                    FFTsPerBlock<BatchSize>() + SM<Arch>());
+
+        // Increase shared memory size, if needed
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            fft_kernel<FFT>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
+        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data);
+        CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+    } else {
+        using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
                          Direction<fft_direction::forward>() +
                          Precision<float>() +
                          ElementsPerThread<8u>() +
                          FFTsPerBlock<BatchSize>() + SM<Arch>());
 
-    // Increase shared memory size, if needed
-    CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        fft_kernel<FFT>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+        // Increase shared memory size, if needed
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            fft_kernel<FFT>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
-    fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data);
-    CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data);
+        CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+
+    }
+    
 }
 
-
-
 // Common implementation function
-void fft_forward(torch::Tensor input) {
+void fft_impl(torch::Tensor input, bool direction) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -93,12 +110,12 @@ void fft_forward(torch::Tensor input) {
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);
 
-    struct FFTParams params = {data_ptr, outer_batch_count};
+    struct FFTParams params = {data_ptr, outer_batch_count, direction};
     fft_func(&params);
 }
 
 PYBIND11_MODULE(fft_nonstrided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT operations using cuFFTDx";
-    m.def("fft", &fft_forward, "In-place 1D C2C FFT using cuFFTDx.");
+    m.def("fft", &fft_impl, "In-place 1D C2C FFT using cuFFTDx.");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zipfft"
-version = "0.0.1_minimal_test"
+version = "0.0.0"
 description = "Python bindings for Zero Implicit Padded (zip) FFT kernels in CUDA."
 authors = [{ name = "Matthew Giammar", email = "mdgiammar@gmail.com" }]
 readme = "README.md"

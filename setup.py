@@ -7,7 +7,7 @@ import os
 import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-__version__ = "0.0.1_minimal_test"
+__version__ = "0.0.0"
 
 abi = int(torch._C._GLIBCXX_USE_CXX11_ABI)
 
