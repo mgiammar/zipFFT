@@ -27,6 +27,8 @@
 
 #include <stdio.h>
 
+/*
+
 #include "complex_fft_1d_strided.cuh"
 
 // FFT configuration structure
@@ -214,9 +216,81 @@ std::vector<std::tuple<int, int, bool>> get_supported_fft_configs() {
 
     return configs;
 }
+*/
+
+#include <pybind11/pybind11.h>
+#include <stdio.h>
+
+#include "../include/dispatch_table_utils.cuh"
+#include "../include/memory_strided_utils.cuh"
+
+struct FFTParams {
+    float2* data;
+    unsigned int inner_batch_count;
+    unsigned int outer_batch_count;
+    bool direction;
+};
+
+template <class FFT>
+__launch_bounds__(FFT::max_threads_per_block)
+__global__ void fft_strided_kernel(float2* data, unsigned int inner_batch_count) {
+
+    float2 thread_data[FFT::storage_size];
+    const unsigned int local_fft_id = threadIdx.y;
+    extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
+    
+    load_strided_smem<FFT>(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block);
+
+    FFT().execute(thread_data, shared_mem);
+
+    store_strided_smem<FFT>(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block, false);
+}
+
+template <unsigned int FFTSize, unsigned int BatchSize, unsigned int Arch>
+void dispatch_function(void* params, cudaStream_t strm) {
+    struct FFTParams* fft_params = static_cast<FFTParams*>(params);
+
+    using namespace cufftdx;
+
+    if(fft_params->direction) {
+        using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+                    Direction<fft_direction::inverse>() +
+                    Precision<float>() +
+                    ElementsPerThread<8u>() +
+                    FFTsPerBlock<BatchSize>() + SM<Arch>());
+
+        // Increase shared memory size, if needed
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            fft_strided_kernel<FFT>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+        
+        dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
+
+        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data, fft_params->inner_batch_count);
+        CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+    } else {
+        using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+                         Direction<fft_direction::forward>() +
+                         Precision<float>() +
+                         ElementsPerThread<8u>() +
+                         FFTsPerBlock<BatchSize>() + SM<Arch>());
+
+        // Increase shared memory size, if needed
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            fft_strided_kernel<FFT>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
+        dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
+
+        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data, fft_params->inner_batch_count);
+        CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+
+    }
+    
+}
 
 // Common implementation function
-void fft_c2c_1d_padded_impl(torch::Tensor input, bool is_forward) {
+void fft_strided_impl(torch::Tensor input, bool is_forward) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -234,7 +308,7 @@ void fft_c2c_1d_padded_impl(torch::Tensor input, bool is_forward) {
         outer_batch_count = 1;
     } else if (input.dim() == 3) {
         fft_size = input.size(1);
-        auto batch_size_pair = get_supported_batches_runtime(fft_size, input.size(2));
+        auto batch_size_pair = get_supported_batches_runtime(fft_size, input.size(2), 0);
         inner_batch_count = batch_size_pair.first;
         batch_size = batch_size_pair.second;
         outer_batch_count = input.size(0);
@@ -249,27 +323,31 @@ void fft_c2c_1d_padded_impl(torch::Tensor input, bool is_forward) {
     // Use the dispatch table instead to figure out the appropriate FFT function
     // TODO: Better error handling, namely giving info on the supported FFT
     // configurations.
-    auto fft_func = get_fft_function(fft_size, batch_size, is_forward);
+    auto fft_func = get_function_from_table(fft_size, batch_size);
     TORCH_CHECK(fft_func != nullptr,
                 "Unsupported FFT configuration: fft_size=", fft_size,
-                ", batch_size=", batch_size, ", is_forward=", is_forward);
+                ", batch_size=", batch_size);
 
-    fft_func(data_ptr, inner_batch_count, outer_batch_count);
+    struct FFTParams fft_params;
+    fft_params.data = data_ptr;
+    fft_params.inner_batch_count = inner_batch_count;
+    fft_params.outer_batch_count = outer_batch_count;
+    fft_params.direction = !is_forward;
+
+    fft_func(&fft_params);
 }
 
-void fft_c2c_1d_padded(torch::Tensor input) {
-    fft_c2c_1d_padded_impl(input, true);  // Forward FFT
+void fft_strided(torch::Tensor input) {
+    fft_strided_impl(input, true);  // Forward FFT
 }
 
-void ifft_c2c_1d_padded(torch::Tensor input) {
-    fft_c2c_1d_padded_impl(input, false);  // Inverse FFT
+void ifft_strided(torch::Tensor input) {
+    fft_strided_impl(input, false);  // Inverse FFT
 }
 
-PYBIND11_MODULE(cfft1d_strided, m) {  // First arg needs to match name in setup.py
+PYBIND11_MODULE(fft_strided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT operations using cuFFTDx";
-    m.def("fft", &fft_c2c_1d_padded, "In-place 1D C2C FFT using cuFFTDx.");
-    m.def("ifft", &ifft_c2c_1d_padded, "In-place 1D C2C IFFT using cuFFTDx.");
-    m.def("get_supported_configs", &get_supported_fft_configs,
-          "Get list of supported (fft_size, batch_size, is_forward) "
-          "configurations");
+    m.def("fft", &fft_strided, "In-place 1D C2C FFT using cuFFTDx.");
+    m.def("ifft", &ifft_strided, "In-place 1D C2C IFFT using cuFFTDx.");
+    m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }
