@@ -1,7 +1,7 @@
 """Simple complex-to-complex 1D FFT tests for cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import conv1d_strided_padded
+from zipfft import conv_strided_padded
 
 import pytest
 import yaml
@@ -20,8 +20,7 @@ TYPE_MAP = {
     "complex128": torch.complex128,
 }
 
-ALL_CONFIGS = conv1d_strided_padded.get_supported_configs()
-CONVOLUTION_SIZES = list(set([(elem[0], elem[1]) for elem in ALL_CONFIGS]))
+ALL_CONFIGS = conv_strided_padded.get_supported_sizes()
 BATCH_SCALE_FACTOR = [1 ,2, 3, 4, 5, 6]
 OUTER_BATCH_SCALE = [1, 2, 3, 4, 5, 6]
 DATA_TYPES = [torch.complex64]
@@ -42,12 +41,12 @@ def run_convolution_strided_padded_test(fft_shape: int, dtype: torch.dtype, sign
     
     #dims = conv1d_strided_padded.conv_dims(x0)
     
-    kernel_size = conv1d_strided_padded.conv_kernel_size(x0)
+    kernel_size = conv_strided_padded.conv_kernel_size(x0)
 
     kernel = torch.randn(fft_shape, dtype=dtype, device="cuda")
     kernel_transposed = torch.randn((kernel_size,), dtype=dtype, device="cuda")
 
-    conv1d_strided_padded.conv_kernel_transpose(kernel, kernel_transposed)
+    conv_strided_padded.conv_kernel_transpose(kernel, kernel_transposed)
 
     x1 = x0.clone()
 
@@ -58,17 +57,17 @@ def run_convolution_strided_padded_test(fft_shape: int, dtype: torch.dtype, sign
     torch.fft.ifft(x0, out=x0, dim=-2)
     x0 *= float(fft_shape[-2])
 
-    conv1d_strided_padded.conv(x1, kernel_transposed, signal_length, False)
+    conv_strided_padded.conv(x1, kernel_transposed, signal_length, False)
 
     assert torch.allclose(x0, x1, atol=5e-3), "FFT results do not match ground truth"
 
-@pytest.mark.parametrize("fft_size,batch_size", CONVOLUTION_SIZES)
+@pytest.mark.parametrize("fft_size", ALL_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 @pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
 @pytest.mark.parametrize("outer_batch_scale", OUTER_BATCH_SCALE)
-def test_convolution_strided(fft_size, batch_size, dtype, batch_scale, outer_batch_scale):
+def test_convolution_strided(fft_size, dtype, batch_scale, outer_batch_scale):
     """Test forward FFT for specific size, batch size, and dtype."""
-    shape = (outer_batch_scale, fft_size, batch_size * batch_scale) if batch_size > 1 else (outer_batch_scale, fft_size, batch_scale)
+    shape = (outer_batch_scale, fft_size, batch_scale)
     signal_length = torch.randint(1, fft_size + 1, (1,)).item()
-    run_convolution_strided_padded_test(fft_shape=shape, dtype=dtype, signal_length=fft_size) #signal_length)
+    run_convolution_strided_padded_test(fft_shape=shape, dtype=dtype, signal_length=signal_length)
 
