@@ -43,9 +43,19 @@ full_include_dirs = [
     "/home/shaharsandhaus/cutlass/include"
 ]
 
-complex_fft_1d_extension = CUDAExtension(
+fft_nonstrided_extension = CUDAExtension(
     name="zipfft.fft_nonstrided",  # Module name needs to match source code PYBIND11 statement
     sources=["src/cuda/fft_nonstrided.cu"],
+    include_dirs=full_include_dirs,
+    extra_compile_args=DEFAULT_COMPILE_ARGS,
+    runtime_library_dirs=[torch_lib],
+    extra_link_args=[f"-Wl,-rpath,{torch_lib}"],         # belt & suspenders
+    libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
+)
+
+fft_nonstrided_padded_extension = CUDAExtension(
+    name="zipfft.fft_nonstrided_padded",  # Module name needs to match source code
+    sources=["src/cuda/fft_nonstrided_padded.cu"],
     include_dirs=full_include_dirs,
     extra_compile_args=DEFAULT_COMPILE_ARGS,
     runtime_library_dirs=[torch_lib],
@@ -83,24 +93,14 @@ complex_conv_1d_strided_padded_extension = CUDAExtension(
     libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
 )
 
-padded_complex_fft_1d_extension = CUDAExtension(
-    name="zipfft.padded_fft1d",  # Module name needs to match source code
-    sources=["src/cuda/padded_complex_fft_1d_binding.cu"],
-    include_dirs=full_include_dirs,
-    extra_compile_args=DEFAULT_COMPILE_ARGS,
-    runtime_library_dirs=[torch_lib],
-    extra_link_args=[f"-Wl,-rpath,{torch_lib}"],         # belt & suspenders
-    libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
-)
-
 # TODO: Make this setup script more robust (plus conda recipe)
 setup(
     ext_modules=[
-        complex_fft_1d_extension,
+        fft_nonstrided_extension,
+        fft_nonstrided_padded_extension,
         complex_fft_1d_strided_extension,
         complex_conv_1d_strided_extension,
-        complex_conv_1d_strided_padded_extension,
-        padded_complex_fft_1d_extension
+        complex_conv_1d_strided_padded_extension
     ],
     cmdclass={"build_ext": BuildExtension},
     version=__version__,

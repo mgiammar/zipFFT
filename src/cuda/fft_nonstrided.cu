@@ -105,7 +105,7 @@ void fft_impl(torch::Tensor input, bool direction) {
     float2* data_ptr =
         reinterpret_cast<float2*>(input.data_ptr<c10::complex<float>>());
 
-    auto fft_func = get_fft_function(fft_size, batch_size);
+    auto fft_func = get_function_from_table(fft_size, batch_size);
     TORCH_CHECK(fft_func != nullptr,
                 "Unsupported FFT configuration: fft_size=", fft_size,
                 ", batch_size=", batch_size);

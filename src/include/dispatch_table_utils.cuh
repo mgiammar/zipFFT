@@ -159,7 +159,7 @@ static const auto dispatch_table = make_dispatch_table(
     std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{}
 );
 
-std::function<int(void*)> get_fft_function(unsigned int fft_size, unsigned int batch_size) {
+std::function<int(void*)> get_function_from_table(unsigned int fft_size, unsigned int batch_size) {
     for (const auto& entry : dispatch_table) {
         if (entry.first.first == fft_size &&
             entry.first.second == batch_size) {

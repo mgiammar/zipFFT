@@ -1,13 +1,13 @@
 """Tests for padded real-to-complex 1D FFTs using cuFFTDx, comparing against PyTorch."""
 
 import torch
-from zipfft import padded_fft1d
+from zipfft import fft_nonstrided_padded
 
 import pytest
 import yaml
 import os
 
-FORWARD_FFT_CONFIGS = padded_fft1d.get_supported_configs()
+FORWARD_FFT_CONFIGS = fft_nonstrided_padded.get_supported_sizes()
 BATCH_SCALE_FACTOR = list(range(1, 20))
 DATA_TYPES = [torch.complex64]
 
@@ -44,7 +44,7 @@ def run_padded_forward_fft_test(
     torch.fft.fft(x0, out=x0, dim=-1)
 
     # Our implementation
-    padded_fft1d.pfft(x1, signal_length)
+    fft_nonstrided_padded.fft(x1, signal_length)
 
     assert torch.allclose(x0, x1, atol=1e-3), (
         f"Padded FFT results do not match ground truth for "
@@ -87,27 +87,27 @@ def run_padded_layered_fft_test(
     x0[:, layer_count:, :] = x1[:, layer_count:, :]
 
     # Our implementation
-    padded_fft1d.pfft_layered(x1, signal_length, layer_count)
+    fft_nonstrided_padded.fft_layered(x1, signal_length, layer_count)
 
     assert torch.allclose(x0, x1, atol=1e-3), (
         f"Padded FFT results do not match ground truth for "
         f"signal_length={signal_length}, fft_size={fft_size}, batch_size1={batch_size1}, batch_size2={batch_size2}, layer_count={layer_count}"
     )
 
-@pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("fft_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 @pytest.mark.parametrize("batch_scale", BATCH_SCALE_FACTOR)
-def test_padded_fft_c2c_1d(fft_size, batch_size, dtype, batch_scale):
+def test_padded_fft_c2c_1d(fft_size, dtype, batch_scale):
     """Test padded forward FFT for specific signal length, fft_size, and dtype."""
     # generate a random signal length less than or equal to fft_size
     signal_length = torch.randint(1, fft_size + 1, (1,)).item()
     run_padded_forward_fft_test(fft_size, signal_length, batch_scale, dtype)
 
-@pytest.mark.parametrize("fft_size,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("fft_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 @pytest.mark.parametrize("batch_scale1", BATCH_SCALE_FACTOR)
 @pytest.mark.parametrize("batch_scale2", BATCH_SCALE_FACTOR)
-def test_padded_layered_fft_c2c_1d(fft_size, batch_size, dtype, batch_scale1, batch_scale2):
+def test_padded_layered_fft_c2c_1d(fft_size, dtype, batch_scale1, batch_scale2):
     """Test padded forward FFT for specific signal length, fft_size, and dtype."""
     # generate a random signal length less than or equal to fft_size
     signal_length = torch.randint(1, fft_size + 1, (1,)).item()
