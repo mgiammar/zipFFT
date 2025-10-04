@@ -1,1 +1,0 @@
-void launch_fill_array_kernel(double* data, unsigned int size);

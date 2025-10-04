@@ -73,9 +73,9 @@ fft_strided_extension = CUDAExtension(
     libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
 )
 
-complex_conv_1d_strided_extension = CUDAExtension(
-    name="zipfft.conv1d_strided",  # Module name needs to match source code PYBIND11 statement
-    sources=["src/cuda/convolution_strided_binding.cu"],
+conv_strided_extension = CUDAExtension(
+    name="zipfft.conv_strided",  # Module name needs to match source code PYBIND11 statement
+    sources=["src/cuda/conv_strided.cu"],
     include_dirs=full_include_dirs,
     extra_compile_args=DEFAULT_COMPILE_ARGS,
     runtime_library_dirs=[torch_lib],
@@ -83,9 +83,9 @@ complex_conv_1d_strided_extension = CUDAExtension(
     libraries=["c10", "torch_cpu", "torch_python"],      # pull in the symbols
 )
 
-complex_conv_1d_strided_padded_extension = CUDAExtension(
-    name="zipfft.conv1d_strided_padded",  # Module name needs to match source code PYBIND11 statement
-    sources=["src/cuda/convolution_strided_padded_binding.cu"],
+conv_strided_padded_extension = CUDAExtension(
+    name="zipfft.conv_strided_padded",  # Module name needs to match source code PYBIND11 statement
+    sources=["src/cuda/conv_strided_padded.cu"],
     include_dirs=full_include_dirs,
     extra_compile_args=DEFAULT_COMPILE_ARGS,
     runtime_library_dirs=[torch_lib],
@@ -99,8 +99,8 @@ setup(
         fft_nonstrided_extension,
         fft_nonstrided_padded_extension,
         fft_strided_extension,
-        complex_conv_1d_strided_extension,
-        complex_conv_1d_strided_padded_extension
+        conv_strided_extension,
+        conv_strided_padded_extension
     ],
     cmdclass={"build_ext": BuildExtension},
     version=__version__,
