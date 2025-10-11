@@ -44,7 +44,7 @@ inline void block_fft_c2c_1d_launcher(T* data) {
         block_fft_c2c_1d_kernel<FFT>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
-    // Cast to cuFFTDx complex type form the FFT struct
+    // Cast to cuFFTDx complex type from the FFT struct
     using complex_type = typename FFT::value_type;
     complex_type* data_t = reinterpret_cast<complex_type*>(data);
 
