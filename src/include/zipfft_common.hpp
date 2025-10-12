@@ -52,34 +52,66 @@ inline unsigned int get_cuda_device_arch() {
 
     return static_cast<unsigned>(major) * 100 + static_cast<unsigned>(minor) * 10;
 }
+
 namespace detail {
+    template <typename, typename = void>
+    struct has_x_field : std::false_type {};
 
-template <typename T1, typename T1R, typename T2, typename T2R>
-struct are_same {
-    constexpr static bool value = std::is_same_v<T1, T1R> && std::is_same_v<T2, T2R>;
-};
+    template <typename T>
+    struct has_x_field<T, std::void_t<decltype(T::x)>> : std::true_type {};
 
-template <typename T1, typename T1R, typename T2, typename T2R>
-inline constexpr bool are_same_v = are_same<T1, T1R, T2, T2R>::value;
+    template <typename, typename = void>
+    struct has_y_field : std::false_type {};
 
-template <typename T, typename = void>
-struct has_value_type : std::false_type {};
+    template <typename T>
+    struct has_y_field<T, std::void_t<decltype(T::y)>> : std::true_type {};
 
-template <typename T>
-struct has_value_type<T, decltype((void)typename T::value_type(), void())> : std::true_type {};
+    // for mixed IO
+    template<typename T1, typename T1R, typename T2, typename T2R>
+    struct are_same {
+        constexpr static bool value = std::is_same_v<T1, T1R> && std::is_same_v<T2, T2R>;
+    };
 
-template <typename T>
-inline constexpr bool has_value_type_v = has_value_type<T>::value;
+    template<typename T1, typename T1R, typename T2, typename T2R>
+    inline constexpr bool are_same_v = are_same<T1, T1R, T2, T2R>::value;
 
-template <typename T, typename = void>
-struct get_precision {
-    using type = T;
-};
+    template<typename T, typename = void>
+    struct has_value_type: std::false_type {
+    };
 
-template <typename T>
-struct get_precision<T, std::enable_if_t<has_value_type_v<T>, void>> {
-    using type = typename T::value_type;
-};
+    template<typename T>
+    struct has_value_type<T, decltype((void)typename T::value_type(), void())>: std::true_type {
+    };
+
+    template<typename T>
+    inline constexpr bool has_value_type_v = has_value_type<T>::value;
+
+    template<typename T, typename = void>
+    struct get_precision {
+        using type = T;
+    };
+
+    template<typename T>
+    struct get_precision<T, std::enable_if_t<has_value_type_v<T>, void>> {
+        using type = typename T::value_type;
+    };
+
+}  // namespace detail
+
+// This detects all variations of complex types:
+// * cufftComplex
+// * float2
+// * cufftdx::complex<>
+// useful for thrust transformations
+template<typename T, typename = void>
+struct has_complex_interface: std::false_type {};
+
+template<typename T>
+struct has_complex_interface<T,
+                                std::enable_if_t<
+                                    detail::has_x_field<T>::value and
+                                    detail::has_y_field<T>::value>>:
+    std::is_same<decltype(T::x), decltype(T::y)> {};
 
 template <typename T>
 struct vector_type;
@@ -130,21 +162,6 @@ struct get_scalar_component<__half2> {
 
 template <typename VecT>
 using get_scalar_component_t = typename get_scalar_component<VecT>::type;
-
-// This detects all variations of complex types:
-// * cufftComplex
-// * float2
-// * cufftdx::complex<>
-// useful for thrust transformations
-template <typename T, typename = void>
-struct has_complex_interface : std::false_type {};
-
-template <typename T>
-struct has_complex_interface<
-    T, std::enable_if_t<detail::has_x_field<T>::value and detail::has_y_field<T>::value>>
-    : std::is_same<decltype(T::x), decltype(T::y)> {};
-
-}  // namespace detail
 
 // Conversion utility for mapping between different floating-point types.
 template <typename TargetPrecision, typename SourcePrecision>
@@ -197,7 +214,7 @@ template <class T>
 inline __device__ constexpr T get_zero() {
     // If type is not complex, need to also check if it is __half2 type
     // since not handled by complex interface function.
-    if constexpr (not detail::has_complex_interface<T>::value) {
+    if constexpr (not zipfft::has_complex_interface<T>::value) {
         if constexpr (std::is_same_v<T, __half2>) {
             return __half2{};
         } else {
@@ -207,18 +224,7 @@ inline __device__ constexpr T get_zero() {
         using value_type = decltype(T::x);
         return T{get_zero<value_type>(), get_zero<value_type>()};
     }
-
-    // Utility function to get the closest power of 2
-    constexpr unsigned int closest_power_of_2(unsigned int v) {
-        static_assert(sizeof(v) == 4, "This supports only 32bit types");
-        v--;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        return ++v;
-    }
+}
 
 }  // namespace zipfft
 

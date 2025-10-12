@@ -11,7 +11,7 @@ namespace zipfft {
 // on a block level is accessed in a strided pattern (e.g., non-contigious
 // dimension for a )
 template <class FFT, unsigned int Stride>
-struct io_strided : public io<FFT> {  // "Inherit" from base I/O struct
+struct io_strided {
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
@@ -54,7 +54,7 @@ struct io_strided : public io<FFT> {  // "Inherit" from base I/O struct
         for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
             if ((i * FFT::stride + threadIdx.x) < cufftdx::size_of<FFT>::value) {
                 if (bid < Batches) {
-                    output[index] = convert<IOType>(thread_data[i]);
+                    thread_data[i] = convert<IOType>(input[index]);
                 }
             }
             index += stride;
@@ -64,7 +64,7 @@ struct io_strided : public io<FFT> {  // "Inherit" from base I/O struct
     // Store for multi-dimensional FFTs across non-contigious (not innermost)
     // dimension using stride to access values.
     template <unsigned int Batches = Stride, typename IOType>
-    static inline __device__ void store_strided(const complex_type* thread_data, IOType* output
+    static inline __device__ void store_strided(const complex_type* thread_data, IOType* output,
                                                 unsigned int local_fft_id) {
         // Calc variables for loop
         const unsigned int batch_offset = batch_offset_strided(local_fft_id);
@@ -82,7 +82,7 @@ struct io_strided : public io<FFT> {  // "Inherit" from base I/O struct
             index += stride;
         }
     }
-}
+};  // struct io_strided
 }  // namespace zipfft
 
 #endif  // ZIPFFT_IO_STRIDED_HPP_

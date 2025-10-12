@@ -58,6 +58,13 @@ padded_real_fft_1d_extension = CUDAExtension(
     extra_compile_args=DEFAULT_COMPILE_ARGS,
 )
 
+strided_complex_fft_1d_extension = CUDAExtension(
+    name="zipfft.strided_cfft1d",  # Module name needs to match source code
+    sources=["src/cuda/strided_complex_fft_1d_binding.cu"],
+    include_dirs=[pybind11.get_include()],
+    extra_compile_args=DEFAULT_COMPILE_ARGS,
+)
+
 # padded_real_convolution_1d_extension = CUDAExtension(
 #     name="zipfft.padded_rconv1d",
 #     sources=["src/cuda/padded_real_conv_1d.cu"],
@@ -72,6 +79,7 @@ setup(
         real_fft_1d_extension,
         padded_real_fft_1d_extension,
         # padded_real_convolution_1d_extension,
+        strided_complex_fft_1d_extension,
     ],
     cmdclass={"build_ext": BuildExtension},
     version=__version__,
