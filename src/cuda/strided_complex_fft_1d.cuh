@@ -26,7 +26,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 // --- Launcher Definition ---
 template <unsigned int Arch, typename T, unsigned int FFTSize, unsigned int Stride,
           bool IsForwardFFT, unsigned int elements_per_thread, unsigned int FFTs_per_block>
-inline void strided_block_fft_c2c_1d_launcher(T* data) {
+inline void strided_block_fft_c2c_1d_launcher(T* data, unsigned int batch_size) {
     using namespace cufftdx;
 
     // Since complex input to FFT, convert vector into its scalar type
@@ -47,8 +47,13 @@ inline void strided_block_fft_c2c_1d_launcher(T* data) {
     using complex_type = typename FFT::value_type;
     complex_type* data_t = reinterpret_cast<complex_type*>(data);
 
+    // Figure out the grid dimensions (how many collective kernels to launch
+    // which satisfies the FFT batch size).
+    const unsigned int grid_size = (batch_size + FFT::ffts_per_block - 1) / FFT::ffts_per_block;
+
     // Launch the kernel and ensure no errors afterwards
-    strided_block_fft_c2c_1d_kernel<FFT, Stride><<<1, FFT::block_dim, FFT::shared_memory_size>>>(data_t);
+    strided_block_fft_c2c_1d_kernel<FFT, Stride>
+        <<<grid_size, FFT::block_dim, FFT::shared_memory_size>>>(data_t);
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
     CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }
@@ -56,19 +61,19 @@ inline void strided_block_fft_c2c_1d_launcher(T* data) {
 // --- Public API Function Template Definition
 template <typename T, unsigned int FFTSize, unsigned int Stride, bool IsForwardFFT,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
-int strided_block_complex_fft_1d(T* data) {
+int strided_block_complex_fft_1d(T* data, unsigned int batch_size) {
     auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
-        case 800: strided_block_fft_c2c_1d_launcher<800, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 860: strided_block_fft_c2c_1d_launcher<860, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 870: strided_block_fft_c2c_1d_launcher<870, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 890: strided_block_fft_c2c_1d_launcher<890, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 900: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 1200: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+        case 800: strided_block_fft_c2c_1d_launcher<800, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+        case 860: strided_block_fft_c2c_1d_launcher<860, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+        case 870: strided_block_fft_c2c_1d_launcher<870, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+        case 890: strided_block_fft_c2c_1d_launcher<890, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+        case 900: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+        case 1200: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "

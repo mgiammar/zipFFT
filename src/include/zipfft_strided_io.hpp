@@ -11,7 +11,7 @@ namespace zipfft {
 // on a block level is accessed in a strided pattern (e.g., non-contigious
 // dimension for a )
 template <class FFT, unsigned int Stride>
-struct io_strided {
+struct io_strided: public io<FFT> {
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
@@ -56,8 +56,8 @@ struct io_strided {
                 if (bid < Batches) {
                     thread_data[i] = convert<IOType>(input[index]);
                 }
+                index += stride;
             }
-            index += stride;
         }
     }
 
@@ -78,8 +78,8 @@ struct io_strided {
                 if (bid < Batches) {
                     output[index] = convert<IOType>(thread_data[i]);
                 }
+                index += stride;
             }
-            index += stride;
         }
     }
 };  // struct io_strided
