@@ -1,14 +1,23 @@
 """Simple real-to-complex 1D FFT tests for the cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import rfft1d
+import zipfft
 
 import pytest
 import yaml
 import os
 
+# Skip entire module if rfft1d is not available
+pytestmark = pytest.mark.skipif(
+    not zipfft.is_extension_available("rfft1d"), reason="rfft1d extension not available"
+)
 
-FORWARD_FFT_CONFIGS = rfft1d.get_supported_configs()
+# Only get configs if rfft1d is available
+if zipfft.rfft1d is not None:
+    FORWARD_FFT_CONFIGS = zipfft.rfft1d.get_supported_configs()
+else:
+    FORWARD_FFT_CONFIGS = []
+
 DATA_TYPES = [torch.float32]
 
 
@@ -45,7 +54,7 @@ def run_forward_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
 
     torch.fft.rfft(x_in, out=x_out)
 
-    rfft1d.rfft(x_in_copy, x_out_copy)
+    zipfft.rfft1d.rfft(x_in_copy, x_out_copy)
     assert torch.allclose(
         x_out, x_out_copy, atol=1e-4
     ), "FFT results do not match ground truth"
@@ -55,5 +64,8 @@ def run_forward_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_fft_r2c_1d(fft_size, batch_size, dtype):
     """Test forward FFT for specific size and dtype."""
+    shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
+    run_forward_rfft_test(fft_shape=shape, dtype=dtype)
+
     shape = (batch_size, fft_size) if batch_size > 1 else (fft_size,)
     run_forward_rfft_test(fft_shape=shape, dtype=dtype)

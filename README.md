@@ -67,6 +67,23 @@ The package is then installable from source. Assuming you have cloned and naviga
 python generate_fft_configs.py
 pip install -e .
 ```
+
+### Local development
+
+Compilation times can be quite long given the heavily templated nature of the CUDA backend and the cuFFTDx library.
+Ways to speed up this process are currently under development, but the following options are available moderately accelerate builds during development.
+First, a full `pip install` does not need to be when developing; we can bypass `pip`'s mechanisms to allow us to directly pass CLI args into `setup.py` one of which is `cuda-arch [list]` to target only a specific subset of CUDA device architectures.
+
+```bash
+# run this instead of pip install -e .
+python setup.py --cuda-arch "8.9,9.0"  # replace with your archs
+```
+
+Increasing the max workers for the ninja backend can also help speed up the compilation process.
+```bash
+export MAX_JOBS=16  # number of cores
+python setup.py --cuda-arch "8.9,9.0"  # replace with your archs
+```
 <!-- 
 ## Further Information and Caveats
 

@@ -1,9 +1,15 @@
 """Strided complex-to-complex 1D FFT tests for cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import strided_cfft1d
+import zipfft
 
 import pytest
+
+# Skip entire module if strided_cfft1d is not available
+pytestmark = pytest.mark.skipif(
+    not zipfft.is_extension_available("strided_cfft1d"),
+    reason="strided_cfft1d extension not available",
+)
 
 
 TYPE_MAP = {
@@ -15,13 +21,18 @@ TYPE_MAP = {
     "complex128": torch.complex128,
 }
 
-ALL_CONFIGS = strided_cfft1d.get_supported_fft_configs()
-FORWARD_FFT_CONFIGS = [
-    (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is True
-]
-INVERSE_FFT_CONFIGS = [
-    (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is False
-]
+# Only get configs if strided_cfft1d is available
+if zipfft.strided_cfft1d is not None:
+    ALL_CONFIGS = zipfft.strided_cfft1d.get_supported_fft_configs()
+    FORWARD_FFT_CONFIGS = [
+        (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is True
+    ]
+    INVERSE_FFT_CONFIGS = [
+        (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is False
+    ]
+else:
+    FORWARD_FFT_CONFIGS = []
+    INVERSE_FFT_CONFIGS = []
 DATA_TYPES = [torch.complex64]
 
 
@@ -60,7 +71,7 @@ def run_forward_strided_fft_test(
         torch.fft.fft(x0, dim=1, out=x0)
 
     # NOTE: This zipFFT function is in-place
-    strided_cfft1d.fft(x1)
+    zipfft.strided_cfft1d.fft(x1)
 
     assert torch.allclose(
         x0, x1, atol=1e-4
@@ -104,7 +115,7 @@ def run_inverse_strided_fft_test(
         x0 *= float(fft_size)  # Scale to match cuFFTDx inverse FFT definition
 
     # NOTE: This zipFFT function is in-place
-    strided_cfft1d.ifft(x1)
+    zipfft.strided_cfft1d.ifft(x1)
 
     assert torch.allclose(
         x0, x1, atol=1e-4

@@ -1,22 +1,33 @@
 """Tests for padded real-to-complex 1D FFTs using cuFFTDx, comparing against PyTorch."""
 
 import torch
-from zipfft import padded_rfft1d
+import zipfft
 
 import pytest
 import yaml
 import os
 
-FORWARD_FFT_CONFIGS = [
-    (fft_size, signal_length, batch_size)
-    for fft_size, signal_length, batch_size, is_forward in padded_rfft1d.get_supported_configs()
-    if is_forward
-]
-INVERSE_FFT_CONFIGS = [
-    (fft_size, signal_length, batch_size)
-    for fft_size, signal_length, batch_size, is_forward in padded_rfft1d.get_supported_configs()
-    if not is_forward
-]
+# Skip entire module if padded_rfft1d is not available
+pytestmark = pytest.mark.skipif(
+    not zipfft.is_extension_available("padded_rfft1d"),
+    reason="padded_rfft1d extension not available",
+)
+
+
+if zipfft.padded_rfft1d is not None:
+    FORWARD_FFT_CONFIGS = [
+        (fft_size, signal_length, batch_size)
+        for fft_size, signal_length, batch_size, is_forward in zipfft.padded_rfft1d.get_supported_configs()
+        if is_forward
+    ]
+    INVERSE_FFT_CONFIGS = [
+        (fft_size, signal_length, batch_size)
+        for fft_size, signal_length, batch_size, is_forward in zipfft.padded_rfft1d.get_supported_configs()
+        if not is_forward
+    ]
+else:
+    FORWARD_FFT_CONFIGS = []
+    INVERSE_FFT_CONFIGS = []
 DATA_TYPES = [torch.float32]
 
 
@@ -64,7 +75,7 @@ def run_padded_forward_rfft_test(
     torch.fft.rfft(x_in_padded, n=fft_size, out=x_out, dim=-1)
 
     # Our implementation
-    padded_rfft1d.prfft(x_in_copy, x_out_copy, fft_size)
+    zipfft.padded_rfft1d.prfft(x_in_copy, x_out_copy, fft_size)
 
     assert torch.allclose(x_out, x_out_copy, atol=1e-4), (
         f"Padded FFT results do not match ground truth for "
@@ -124,8 +135,8 @@ def run_padded_inverse_rfft_test(
     x_out.copy_(x_out_torch)
 
     # Our implementation
-    padded_rfft1d.pirfft(x_in_copy, x_out_copy, fft_size)
-    
+    zipfft.padded_rfft1d.pirfft(x_in_copy, x_out_copy, fft_size)
+
     print(x_out)
     print(x_out_copy)
 
@@ -139,4 +150,5 @@ def run_padded_inverse_rfft_test(
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_padded_fft_c2r_1d(fft_size, signal_length, batch_size, dtype):
     """Test padded inverse FFT for specific signal length, fft_size, and dtype."""
+    run_padded_forward_rfft_test(fft_size, signal_length, batch_size, dtype)
     run_padded_inverse_rfft_test(fft_size, signal_length, batch_size, dtype)

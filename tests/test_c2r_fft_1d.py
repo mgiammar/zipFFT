@@ -1,14 +1,22 @@
 """Simple complex-to-real 1D FFT tests for the cuFFTDx comparing against PyTorch."""
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import rfft1d
+import zipfft
 
 import pytest
 import yaml
 import os
 
+# Skip entire module if rfft1d is not available
+pytestmark = pytest.mark.skipif(
+    not zipfft.is_extension_available("rfft1d"), reason="rfft1d extension not available"
+)
 
-INVERSE_FFT_CONFIGS = rfft1d.get_supported_configs()
+
+if zipfft.rfft1d is not None:
+    INVERSE_FFT_CONFIGS = zipfft.rfft1d.get_supported_configs()
+else:
+    INVERSE_FFT_CONFIGS = []
 DATA_TYPES = [torch.float32]
 
 
@@ -31,7 +39,7 @@ def run_inverse_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
         complex_dtype = torch.complex128
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
-    
+
     # Complex shape logic
     if len(fft_shape) == 1:
         complex_fft_shape = (fft_shape[0] // 2 + 1,)
@@ -45,9 +53,11 @@ def run_inverse_rfft_test(fft_shape: int, dtype: torch.dtype = torch.float32):
     x_out_copy = x_out.clone()
 
     torch.fft.irfft(x_in, out=x_out)
-    x_out *= float(fft_shape[-1])  # Scale the output to match the inverse FFT definition
+    x_out *= float(
+        fft_shape[-1]
+    )  # Scale the output to match the inverse FFT definition
 
-    rfft1d.irfft(x_in_copy, x_out_copy)
+    zipfft.rfft1d.irfft(x_in_copy, x_out_copy)
     assert torch.allclose(
         x_out, x_out_copy, atol=1e-4
     ), "FFT results do not match ground truth"
