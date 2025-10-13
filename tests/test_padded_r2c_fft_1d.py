@@ -1,13 +1,24 @@
 """Tests for padded real-to-complex 1D FFTs using cuFFTDx, comparing against PyTorch."""
 
 import torch
-from zipfft import padded_rfft1d
+import zipfft
 
 import pytest
 import yaml
 import os
 
-FORWARD_FFT_CONFIGS = padded_rfft1d.get_supported_configs()
+# Skip entire module if padded_rfft1d is not available
+pytestmark = pytest.mark.skipif(
+    zipfft.is_extension_available("padded_rfft1d"),
+    reason="padded_rfft1d extension not available",
+)
+
+# Only get configs if padded_rfft1d is available
+if zipfft.padded_rfft1d is not None:
+    FORWARD_FFT_CONFIGS = zipfft.padded_rfft1d.get_supported_configs()
+else:
+    FORWARD_FFT_CONFIGS = []
+
 DATA_TYPES = [torch.float32]
 
 
@@ -55,7 +66,7 @@ def run_padded_forward_rfft_test(
     torch.fft.rfft(x_in_padded, n=fft_size, out=x_out, dim=-1)
 
     # Our implementation
-    padded_rfft1d.prfft(x_in_copy, x_out_copy, fft_size)
+    zipfft.padded_rfft1d.prfft(x_in_copy, x_out_copy, fft_size)
 
     assert torch.allclose(x_out, x_out_copy, atol=1e-4), (
         f"Padded FFT results do not match ground truth for "
@@ -67,4 +78,7 @@ def run_padded_forward_rfft_test(
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_padded_fft_r2c_1d(fft_size, signal_length, batch_size, dtype):
     """Test padded forward FFT for specific signal length, fft_size, and dtype."""
+    run_padded_forward_rfft_test(fft_size, signal_length, batch_size, dtype)
+    """Test padded forward FFT for specific signal length, fft_size, and dtype."""
+
     run_padded_forward_rfft_test(fft_size, signal_length, batch_size, dtype)

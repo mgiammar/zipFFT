@@ -22,34 +22,43 @@ def parse_cuda_architectures():
         dest="cuda_architectures",
         help='Comma-separated list of CUDA architectures to compile for (e.g., "7.5,8.0,8.6")',
     )
+    parser.add_argument(
+        "--enable-extensions",
+        dest="enable_extensions",
+        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,strided_cfft1d")',
+        default="cfft1d,rfft1d,padded_rfft1d,strided_cfft1d",
+    )
 
     # Parse known args to avoid conflicts with setuptools
     args, unknown = parser.parse_known_args()
 
     # Remove our custom args from sys.argv so setuptools doesn't see them
-    if "--cuda-arch" in sys.argv:
-        idx = sys.argv.index("--cuda-arch")
-        sys.argv.pop(idx)  # Remove --cuda-arch
-        if idx < len(sys.argv):
-            sys.argv.pop(idx)  # Remove the value
-    if "--cuda-architectures" in sys.argv:
-        idx = sys.argv.index("--cuda-architectures")
-        sys.argv.pop(idx)  # Remove --cuda-architectures
-        if idx < len(sys.argv):
-            sys.argv.pop(idx)  # Remove the value
+    for arg_name in ["--cuda-arch", "--cuda-architectures", "--enable-extensions"]:
+        if arg_name in sys.argv:
+            idx = sys.argv.index(arg_name)
+            sys.argv.pop(idx)  # Remove the argument
+            # Remove value for non-flag arguments
+            if idx < len(sys.argv):
+                sys.argv.pop(idx)
 
-    # Check environment variable as fallback
-    cuda_archs = args.cuda_architectures or os.environ.get("CUDA_ARCHITECTURES", None)
+    return args
 
-    if cuda_archs:
-        return [arch.strip() for arch in cuda_archs.split(",")]
 
-    # Default architectures if none specified
-    return ["8.0", "8.6", "8.9", "9.0"]
-
+# Parse arguments
+parsed_args = parse_cuda_architectures()
 
 # Get CUDA architectures
-cuda_architectures = parse_cuda_architectures()
+cuda_archs = parsed_args.cuda_architectures or os.environ.get(
+    "CUDA_ARCHITECTURES", None
+)
+if cuda_archs:
+    cuda_architectures = [arch.strip() for arch in cuda_archs.split(",")]
+else:
+    cuda_architectures = ["8.0", "8.6", "8.9", "9.0", "12.0"]
+
+# Get enabled extensions
+enabled_extensions = [ext.strip() for ext in parsed_args.enable_extensions.split(",")]
+
 
 # fmt: off
 DEBUG_PRINT = False
@@ -79,9 +88,14 @@ def get_compile_args():
     # Add preprocessor definitions for enabled CUDA architectures
     arch_defines = []
     for arch in cuda_architectures:
-        arch_int = int(arch.replace('.', ''))
+        # Convert decimal arch to what cuFFTDx expects
+        # e.g. 8.9 -> 89 -> 890
+        # e.g. 12.0 -> 120 -> 1200
+        arch_int = arch.replace(".", "")
+        arch_int = arch_int + "0"
+
         arch_defines.append(f"-DENABLE_CUDA_ARCH_{arch_int}")
-    
+
     nvcc_args.extend(arch_defines)
 
     # Add architecture-specific flags
@@ -101,43 +115,56 @@ def get_compile_args():
 
 DEFAULT_COMPILE_ARGS = get_compile_args()
 
+# Conditionally create extensions
+ext_modules = []
 
-complex_fft_1d_extension = CUDAExtension(
-    name="zipfft.cfft1d",  # Module name needs to match source code PYBIND11 statement
-    sources=["src/cuda/complex_fft_1d_binding.cu"],
-    include_dirs=[pybind11.get_include()],
-    extra_compile_args=DEFAULT_COMPILE_ARGS,
-)
+if "cfft1d" in enabled_extensions:
+    complex_fft_1d_extension = CUDAExtension(
+        name="zipfft.cfft1d",
+        sources=["src/cuda/complex_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(complex_fft_1d_extension)
 
+if "rfft1d" in enabled_extensions:
+    real_fft_1d_extension = CUDAExtension(
+        name="zipfft.rfft1d",
+        sources=["src/cuda/real_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(real_fft_1d_extension)
 
-real_fft_1d_extension = CUDAExtension(
-    name="zipfft.rfft1d",  # Module name needs to match source code PYBIND11 statement
-    sources=["src/cuda/real_fft_1d_binding.cu"],
-    include_dirs=[pybind11.get_include()],
-    extra_compile_args=DEFAULT_COMPILE_ARGS,
-)
+if "padded_rfft1d" in enabled_extensions:
+    padded_real_fft_1d_extension = CUDAExtension(
+        name="zipfft.padded_rfft1d",
+        sources=["src/cuda/padded_real_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(padded_real_fft_1d_extension)
 
+if "strided_cfft1d" in enabled_extensions:
+    strided_complex_fft_1d_extension = CUDAExtension(
+        name="zipfft.strided_cfft1d",
+        sources=["src/cuda/strided_complex_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(strided_complex_fft_1d_extension)
 
-padded_real_fft_1d_extension = CUDAExtension(
-    name="zipfft.padded_rfft1d",  # Module name needs to match source code
-    sources=["src/cuda/padded_real_fft_1d_binding.cu"],
-    include_dirs=[pybind11.get_include()],
-    extra_compile_args=DEFAULT_COMPILE_ARGS,
-)
+# Write build configuration to a file for testing
+build_config = {
+    "cuda_architectures": cuda_architectures,
+    "enabled_extensions": enabled_extensions,
+}
 
-strided_complex_fft_1d_extension = CUDAExtension(
-    name="zipfft.strided_cfft1d",  # Module name needs to match source code
-    sources=["src/cuda/strided_complex_fft_1d_binding.cu"],
-    include_dirs=[pybind11.get_include()],
-    extra_compile_args=DEFAULT_COMPILE_ARGS,
-)
-
-# padded_real_convolution_1d_extension = CUDAExtension(
-#     name="zipfft.padded_rconv1d",
-#     sources=["src/cuda/padded_real_conv_1d.cu"],
-#     include_dirs=[pybind11.get_include()],
-#     extra_compile_args=DEFAULT_COMPILE_ARGS,
-# )
+os.makedirs("src/zipfft", exist_ok=True)
+with open("src/zipfft/build_config.py", "w") as f:
+    f.write(f"# Auto-generated build configuration\n")
+    f.write(f"CUDA_ARCHITECTURES = {cuda_architectures}\n")
+    f.write(f"ENABLED_EXTENSIONS = {enabled_extensions}\n")
 
 # TODO: Make this setup script more robust (plus conda recipe)
 setup(
@@ -145,13 +172,7 @@ setup(
     description="Custom FFT operations for PyTorch using cuFFTDx",
     author="Matthew Giammar",
     python_requires=">=3.9",
-    ext_modules=[
-        complex_fft_1d_extension,
-        real_fft_1d_extension,
-        padded_real_fft_1d_extension,
-        # padded_real_convolution_1d_extension,
-        strided_complex_fft_1d_extension,
-    ],
+    ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},
     version=__version__,
 )
