@@ -68,12 +68,24 @@ int strided_block_complex_fft_1d(T* data, unsigned int batch_size) {
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
+#ifdef ENABLE_CUDA_ARCH_800
         case 800: strided_block_fft_c2c_1d_launcher<800, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_860
         case 860: strided_block_fft_c2c_1d_launcher<860, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_870
         case 870: strided_block_fft_c2c_1d_launcher<870, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_890
         case 890: strided_block_fft_c2c_1d_launcher<890, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_900
         case 900: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
+#if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
         case 1200: strided_block_fft_c2c_1d_launcher<900, T, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(data, batch_size); break;
+#endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "

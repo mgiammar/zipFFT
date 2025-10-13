@@ -160,14 +160,26 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
+#ifdef ENABLE_CUDA_ARCH_800
         case 800: padded_block_real_fft_1d_launcher<800, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_860
         case 860: padded_block_real_fft_1d_launcher<860, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_870
         case 870: padded_block_real_fft_1d_launcher<870, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_890
         case 890: padded_block_real_fft_1d_launcher<890, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_900
         case 900: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
         // Fallback: Architecture 1200 uses the 900 template as cuFFTDx does not yet
         // provide specific optimizations for newer architectures like Hopper/Blackwell.
         case 1200: padded_block_real_fft_1d_launcher<900, Input_T, Output_T, SignalLength, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                     << ". Supported architectures are 800, 860, 870, 890, "

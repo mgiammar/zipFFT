@@ -2,12 +2,54 @@
 
 from setuptools import setup, Extension
 import pybind11
+import argparse
+import sys
+import os
 
 import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 __version__ = "0.0.2alpha"
 
+
+# Parse command line arguments for CUDA architectures
+def parse_cuda_architectures():
+    """Parse CUDA architectures from command line arguments or environment variables."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--cuda-arch",
+        "--cuda-architectures",
+        dest="cuda_architectures",
+        help='Comma-separated list of CUDA architectures to compile for (e.g., "7.5,8.0,8.6")',
+    )
+
+    # Parse known args to avoid conflicts with setuptools
+    args, unknown = parser.parse_known_args()
+
+    # Remove our custom args from sys.argv so setuptools doesn't see them
+    if "--cuda-arch" in sys.argv:
+        idx = sys.argv.index("--cuda-arch")
+        sys.argv.pop(idx)  # Remove --cuda-arch
+        if idx < len(sys.argv):
+            sys.argv.pop(idx)  # Remove the value
+    if "--cuda-architectures" in sys.argv:
+        idx = sys.argv.index("--cuda-architectures")
+        sys.argv.pop(idx)  # Remove --cuda-architectures
+        if idx < len(sys.argv):
+            sys.argv.pop(idx)  # Remove the value
+
+    # Check environment variable as fallback
+    cuda_archs = args.cuda_architectures or os.environ.get("CUDA_ARCHITECTURES", None)
+
+    if cuda_archs:
+        return [arch.strip() for arch in cuda_archs.split(",")]
+
+    # Default architectures if none specified
+    return ["8.0", "8.6", "8.9", "9.0"]
+
+
+# Get CUDA architectures
+cuda_architectures = parse_cuda_architectures()
 
 # fmt: off
 DEBUG_PRINT = False
@@ -17,12 +59,13 @@ if DEBUG_PRINT:
     print("Using torch library directory:    ", pybind11.get_cmake_dir())
     print("Using library dirs:               ", torch.utils.cpp_extension.CUDA_HOME)
     print("                                  ", torch.utils.cpp_extension.TORCH_LIB_PATH)
+    print("CUDA architectures to compile:    ", cuda_architectures)
 # fmt: on
 
 
-DEFAULT_COMPILE_ARGS = {
-    # "cxx": ["-O3"],
-    "nvcc": [
+def get_compile_args():
+    """Generate compile arguments including CUDA architectures."""
+    nvcc_args = [
         "-O3",
         "-std=c++17",
         # NOTE: Necessary to un-define PyTorch default macros with fp16/bf16 to get
@@ -31,8 +74,32 @@ DEFAULT_COMPILE_ARGS = {
         "-U__CUDA_NO_HALF_CONVERSIONS__",
         "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
         "-U__CUDA_NO_HALF2_OPERATORS__",
-    ],
-}
+    ]
+
+    # Add preprocessor definitions for enabled CUDA architectures
+    arch_defines = []
+    for arch in cuda_architectures:
+        arch_int = int(arch.replace('.', ''))
+        arch_defines.append(f"-DENABLE_CUDA_ARCH_{arch_int}")
+    
+    nvcc_args.extend(arch_defines)
+
+    # Add architecture-specific flags
+    for arch in cuda_architectures:
+        nvcc_args.extend(
+            [
+                "-gencode",
+                f"arch=compute_{arch.replace('.', '')},code=sm_{arch.replace('.', '')}",
+            ]
+        )
+
+    return {
+        # "cxx": ["-O3"],
+        "nvcc": nvcc_args,
+    }
+
+
+DEFAULT_COMPILE_ARGS = get_compile_args()
 
 
 complex_fft_1d_extension = CUDAExtension(
@@ -74,6 +141,10 @@ strided_complex_fft_1d_extension = CUDAExtension(
 
 # TODO: Make this setup script more robust (plus conda recipe)
 setup(
+    name="zipFFT",
+    description="Custom FFT operations for PyTorch using cuFFTDx",
+    author="Matthew Giammar",
+    python_requires=">=3.9",
     ext_modules=[
         complex_fft_1d_extension,
         real_fft_1d_extension,
