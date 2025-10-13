@@ -7,8 +7,7 @@
 template <class FFT, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void block_fft_r2c_1d_kernel(ScalarType* input_data,
-                                 ComplexType* output_data) {
+    void block_fft_r2c_1d_kernel(ScalarType* input_data, ComplexType* output_data) {
     using complex_type = ComplexType;
 
     // Local array for thread
@@ -30,8 +29,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 template <class FFT, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void block_fft_c2r_1d_kernel(ComplexType* input_data,
-                                 ScalarType* output_data) {
+    void block_fft_c2r_1d_kernel(ComplexType* input_data, ScalarType* output_data) {
     using complex_type = ComplexType;
 
     // Local array for thread
@@ -51,30 +49,24 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 }
 
 // --- Unified Launcher Definition (for both r2c & c2r) ---
-template <unsigned int Arch, typename Input_T, typename Output_T,
-          unsigned int FFTSize, bool IsForwardFFT,
-          unsigned int elements_per_thread, unsigned int FFTs_per_block>
-inline void block_real_fft_1d_launcher(Input_T* input_data,
-                                       Output_T* output_data) {
+template <unsigned int Arch, typename Input_T, typename Output_T, unsigned int FFTSize,
+          bool IsForwardFFT, unsigned int elements_per_thread, unsigned int FFTs_per_block>
+inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_data) {
     using namespace cufftdx;
 
     // R2C and C2R specific data layout property
-    using real_fft_options =
-        RealFFTOptions<complex_layout::natural, real_mode::folded>;
-    using scalar_precision_type =
-        std::conditional_t<IsForwardFFT, Input_T, Output_T>;
+    using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
+    using scalar_precision_type = std::conditional_t<IsForwardFFT, Input_T, Output_T>;
 
     // Conditional statements are used to determine the FFT traits
     // about direction and precision
-    constexpr auto fft_direction =
-        IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
+    constexpr auto fft_direction = IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
     constexpr auto fft_type = IsForwardFFT ? fft_type::r2c : fft_type::c2r;
 
-    using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type>() +
-                         real_fft_options() + Direction<fft_direction>() +
-                         Precision<scalar_precision_type>() +
-                         ElementsPerThread<elements_per_thread>() +
-                         FFTsPerBlock<FFTs_per_block>() + SM<Arch>());
+    using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type>() + real_fft_options() +
+                         Direction<fft_direction>() + Precision<scalar_precision_type>() +
+                         ElementsPerThread<elements_per_thread>() + FFTsPerBlock<FFTs_per_block>() +
+                         SM<Arch>());
 
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
@@ -82,37 +74,30 @@ inline void block_real_fft_1d_launcher(Input_T* input_data,
     // Compile-time branching to determine which FFT kernel to use
     if constexpr (IsForwardFFT) {
         // Increase shared memory size, if needed
-        CUDA_CHECK_AND_EXIT(
-            cudaFuncSetAttribute(block_fft_r2c_1d_kernel<FFT>,
-                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                 FFT::shared_memory_size));
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(block_fft_r2c_1d_kernel<FFT>,
+                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                 FFT::shared_memory_size));
 
         // Cast input data to cuFFTDx types
         scalar_type* input_data_t = reinterpret_cast<scalar_type*>(input_data);
-        complex_type* output_data_t =
-            reinterpret_cast<complex_type*>(output_data);
+        complex_type* output_data_t = reinterpret_cast<complex_type*>(output_data);
 
         // Launch the kernel
         block_fft_r2c_1d_kernel<FFT>
-            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t,
-                                                             output_data_t);
+            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     } else {
         // Increase shared memory size, if needed
-        CUDA_CHECK_AND_EXIT(
-            cudaFuncSetAttribute(block_fft_c2r_1d_kernel<FFT>,
-                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                 FFT::shared_memory_size));
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(block_fft_c2r_1d_kernel<FFT>,
+                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                 FFT::shared_memory_size));
 
         // Cast input data to cuFFTDx types
-        complex_type* input_data_t =
-            reinterpret_cast<complex_type*>(input_data);
-        scalar_type* output_data_t =
-            reinterpret_cast<scalar_type*>(output_data);
+        complex_type* input_data_t = reinterpret_cast<complex_type*>(input_data);
+        scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
 
         // Launch the kernel
         block_fft_c2r_1d_kernel<FFT>
-            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t,
-                                                             output_data_t);
+            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     }
 
     // Ensure no errors afterwards
@@ -121,9 +106,8 @@ inline void block_real_fft_1d_launcher(Input_T* input_data,
 }
 
 // --- Public API Function Template Definition ---
-template <typename Input_T, typename Output_T, unsigned int FFTSize,
-          bool IsForwardFFT, unsigned int elements_per_thread,
-          unsigned int FFTs_per_block>
+template <typename Input_T, typename Output_T, unsigned int FFTSize, bool IsForwardFFT,
+          unsigned int elements_per_thread, unsigned int FFTs_per_block>
 int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     auto arch = example::get_cuda_device_arch();
 
@@ -131,14 +115,26 @@ int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
+#ifdef ENABLE_CUDA_ARCH_800
         case 800: block_real_fft_1d_launcher<800, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_860
         case 860: block_real_fft_1d_launcher<860, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_870
         case 870: block_real_fft_1d_launcher<870, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_890
         case 890: block_real_fft_1d_launcher<890, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_900
         case 900: block_real_fft_1d_launcher<900, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
         // Fallback: Architecture 1200 uses the 900 template as cuFFTDx does not yet
         // provide specific optimizations for newer architectures like Hopper/Blackwell.
-        case 1200: block_real_fft_1d_launcher<900, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break; 
+#if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
+        case 1200: block_real_fft_1d_launcher<900, Input_T, Output_T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data); break;
+#endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "

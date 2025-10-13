@@ -79,12 +79,24 @@ int block_complex_fft_1d(T* data) {
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
     /* clang-format off */
     switch (arch) {
+#ifdef ENABLE_CUDA_ARCH_800
         case 800: block_fft_c2c_1d_launcher<800, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_860
         case 860: block_fft_c2c_1d_launcher<860, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_870
         case 870: block_fft_c2c_1d_launcher<870, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_890
         case 890: block_fft_c2c_1d_launcher<890, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+#endif
+#ifdef ENABLE_CUDA_ARCH_900
         case 900: block_fft_c2c_1d_launcher<900, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
-        case 1200: block_fft_c2c_1d_launcher<900, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break; 
+#endif
+#if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
+        case 1200: block_fft_c2c_1d_launcher<900, T, FFTSize, IsForwardFFT, elements_per_thread, FFTs_per_block>(data); break;
+#endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "

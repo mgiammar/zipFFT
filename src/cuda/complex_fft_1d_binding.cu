@@ -39,37 +39,23 @@ struct ComplexFFTConfig1D {
 
 // Define supported FFT configurations at the top of the file for easy
 // modification Format: (fft_size, batch_size, is_forward)
-static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 28>
+static constexpr std::array<std::tuple<unsigned int, unsigned int, bool>, 14>
     SUPPORTED_FFT_CONFIGS = {{// Forward FFT configurations
                               {64, 1, true},
-                              {64, 2, true},
                               {128, 1, true},
-                              {128, 2, true},
                               {256, 1, true},
-                              {256, 2, true},
                               {512, 1, true},
-                              {512, 2, true},
                               {1024, 1, true},
-                              {1024, 2, true},
                               {2048, 1, true},
-                              {2048, 2, true},
                               {4096, 1, true},
-                              {4096, 2, true},
                               // Inverse FFT configurations
                               {64, 1, false},
-                              {64, 2, false},
                               {128, 1, false},
-                              {128, 2, false},
                               {256, 1, false},
-                              {256, 2, false},
                               {512, 1, false},
-                              {512, 2, false},
                               {1024, 1, false},
-                              {1024, 2, false},
                               {2048, 1, false},
-                              {2048, 2, false},
-                              {4096, 1, false},
-                              {4096, 2, false}}};
+                              {4096, 1, false}}};
 
 // Template dispatch functions for each supported configuration
 template <unsigned int FFTSize, unsigned int BatchSize, bool IsForwardFFT>
