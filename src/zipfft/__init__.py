@@ -23,6 +23,11 @@ except ImportError:
     padded_rfft1d = None
 
 try:
+    from . import padded_cfft1d
+except ImportError:
+    padded_cfft1d = None
+
+try:
     from . import strided_cfft1d
 except ImportError:
     strided_cfft1d = None

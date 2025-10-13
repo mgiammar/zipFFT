@@ -21,12 +21,13 @@ def parse_cuda_architectures():
         "--cuda-architectures",
         dest="cuda_architectures",
         help='Comma-separated list of CUDA architectures to compile for (e.g., "7.5,8.0,8.6")',
+        default=None,  # Will use env var or fallback if None
     )
     parser.add_argument(
         "--enable-extensions",
         dest="enable_extensions",
-        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,strided_cfft1d")',
-        default="cfft1d,rfft1d,padded_rfft1d,strided_cfft1d",
+        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d")',
+        default=None,  # Will use env var or fallback if None
     )
 
     # Parse known args to avoid conflicts with setuptools
@@ -47,17 +48,21 @@ def parse_cuda_architectures():
 # Parse arguments
 parsed_args = parse_cuda_architectures()
 
-# Get CUDA architectures
-cuda_archs = parsed_args.cuda_architectures or os.environ.get(
-    "CUDA_ARCHITECTURES", None
+# Get CUDA architectures with precedence: CLI args > env vars > defaults
+cuda_archs_str = (
+    parsed_args.cuda_architectures
+    or os.environ.get("CUDA_ARCHITECTURES")
+    or "8.0,8.6,8.9,9.0,12.0"
 )
-if cuda_archs:
-    cuda_architectures = [arch.strip() for arch in cuda_archs.split(",")]
-else:
-    cuda_architectures = ["8.0", "8.6", "8.9", "9.0", "12.0"]
+cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 
-# Get enabled extensions
-enabled_extensions = [ext.strip() for ext in parsed_args.enable_extensions.split(",")]
+# Get enabled extensions with precedence: CLI args > env vars > defaults
+enabled_exts_str = (
+    parsed_args.enable_extensions
+    or os.environ.get("ENABLED_EXTENSIONS")
+    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d"
+)
+enabled_extensions = [ext.strip() for ext in enabled_exts_str.split(",")]
 
 
 # fmt: off
@@ -144,6 +149,15 @@ if "padded_rfft1d" in enabled_extensions:
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(padded_real_fft_1d_extension)
+
+if "padded_cfft1d" in enabled_extensions:
+    padded_complex_fft_1d_extension = CUDAExtension(
+        name="zipfft.padded_cfft1d",
+        sources=["src/cuda/padded_complex_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(padded_complex_fft_1d_extension)
 
 if "strided_cfft1d" in enabled_extensions:
     strided_complex_fft_1d_extension = CUDAExtension(
