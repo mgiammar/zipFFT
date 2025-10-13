@@ -82,6 +82,9 @@ struct io_strided: public io<FFT> {
             }
         }
     }
+
+    // TODO: implement the shared memory version of the above functions
+    //       (and profile the relative performance impact).
 };  // struct io_strided
 }  // namespace zipfft
 
