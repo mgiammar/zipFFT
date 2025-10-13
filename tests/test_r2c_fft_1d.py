@@ -9,7 +9,7 @@ import os
 
 # Skip entire module if rfft1d is not available
 pytestmark = pytest.mark.skipif(
-    zipfft.is_extension_available("rfft1d"), reason="rfft1d extension not available"
+    not zipfft.is_extension_available("rfft1d"), reason="rfft1d extension not available"
 )
 
 # Only get configs if rfft1d is available

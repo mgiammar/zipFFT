@@ -5,35 +5,30 @@ from typing import List
 
 __version__ = "0.0.2alpha"
 
-# Simple availability checking - just try to import each module
-_available_modules = {}
 
 # Try to import each extension
 try:
     from . import cfft1d
-
-    _available_modules["cfft1d"] = cfft1d
 except ImportError:
     cfft1d = None
 
 try:
     from . import rfft1d
-
-    _available_modules["rfft1d"] = rfft1d
 except ImportError:
     rfft1d = None
 
 try:
     from . import padded_rfft1d
-
-    _available_modules["padded_rfft1d"] = padded_rfft1d
 except ImportError:
     padded_rfft1d = None
 
 try:
-    from . import strided_cfft1d
+    from . import padded_cfft1d
+except ImportError:
+    padded_cfft1d = None
 
-    _available_modules["strided_cfft1d"] = strided_cfft1d
+try:
+    from . import strided_cfft1d
 except ImportError:
     strided_cfft1d = None
 
@@ -47,12 +42,12 @@ except ImportError:
 
 def is_extension_available(extension_name: str) -> bool:
     """Check if a specific extension is available."""
-    return extension_name in _available_modules
+    return extension_name in ENABLED_EXTENSIONS
 
 
 def get_available_extensions() -> List[str]:
     """Get list of available extensions."""
-    return list(_available_modules.keys())
+    return list(ENABLED_EXTENSIONS)
 
 
 def get_cuda_architectures() -> List[str]:
