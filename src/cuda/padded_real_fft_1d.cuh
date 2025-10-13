@@ -1,8 +1,8 @@
 #include <cufftdx.hpp>
 
-#include "../include/block_io.hpp"
-#include "../include/common.hpp"
-#include "../include/padded_io.hpp"
+#include "../include/zipfft_block_io.hpp"
+#include "../include/zipfft_common.hpp"
+#include "../include/zipfft_padded_io.hpp"
 
 template <int SignalLength, class FFT,
           typename ComplexType = typename FFT::value_type,
@@ -15,8 +15,8 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using scalar_type = typename complex_type::value_type;
 
     // Input is padded, use padded I/O utilities. Output is not padded
-    using input_utils = example::io_padded<FFT, SignalLength>;
-    using output_utils = example::io<FFT>;
+    using input_utils = zipfft::io_padded<FFT, SignalLength>;
+    using output_utils = zipfft::io<FFT>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
@@ -49,9 +49,9 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 //     // NOTE: This does not handle the case where SignalLength is larger!
 //     constexpr bool needs_padding = (SignalLength !=
 //     cufftdx::size_of<FFT>::value); using input_utils  =
-//     std::conditional_t<needs_padding, example::io_padded<FFT, SignalLength>,
-//     example::io<FFT>>; using output_utils = std::conditional_t<needs_padding,
-//     example::io_padded<FFT, SignalLength>, example::io<FFT>>;
+//     std::conditional_t<needs_padding, zipfft::io_padded<FFT, SignalLength>,
+//     zipfft::io<FFT>>; using output_utils = std::conditional_t<needs_padding,
+//     zipfft::io_padded<FFT, SignalLength>, zipfft::io<FFT>>;
 
 //     // Local array for thread
 //     complex_type thread_data[FFT::storage_size];
@@ -154,7 +154,7 @@ int padded_block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
     static_assert(IsForwardFFT,
                   "Backward padded real FFTs (c2r) are not implemented yet.");
 
-    auto arch = example::get_cuda_device_arch();
+    auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
