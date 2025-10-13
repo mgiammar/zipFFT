@@ -54,7 +54,7 @@ struct io_strided: public io<FFT> {
         for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
             if ((i * FFT::stride + threadIdx.x) < cufftdx::size_of<FFT>::value) {
                 if (bid < Batches) {
-                    thread_data[i] = convert<IOType>(input[index]);
+                    thread_data[i] = convert<complex_type>(input[index]);
                 }
                 index += stride;
             }

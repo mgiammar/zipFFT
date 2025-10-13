@@ -188,8 +188,9 @@ __host__ __device__ constexpr TargetPrecision convert_scalar(const SourcePrecisi
     return ret;
 }
 
-// Conversion utility for complex types (e.g., __half2 --> float2)
+// Conversion utility for complex types (e.g., __half2 --> float2 or float --> double)
 // Constructed so both scalar and complex types can be supported.
+// NOTE: Does not support scalar -> complex or complex -> scalar conversion.
 template <typename TargetTypeOrPrecision, typename SourceType>
 __host__ __device__ constexpr auto convert(const SourceType& v) {
     constexpr bool is_source_complex = detail::has_value_type_v<SourceType>;
