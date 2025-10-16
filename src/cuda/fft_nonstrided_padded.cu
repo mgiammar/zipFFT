@@ -25,6 +25,7 @@ struct FFTParams {
     unsigned int extra_layers;
 };
 
+
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block)
 __global__ void fft_padded_kernel(
@@ -32,16 +33,18 @@ __global__ void fft_padded_kernel(
         typename FFT::workspace_type workspace,
         unsigned int signal_length,
         unsigned int active_layers,
-        unsigned int extra_layers) {
+        unsigned int extra_layers,
+        bool disable_compute) {
 
     float2 thread_data[FFT::storage_size];
 
     const unsigned int local_fft_id = threadIdx.y;
     load_padded_layered<FFT>(data, thread_data, local_fft_id, signal_length, active_layers, extra_layers);
 
-    // Execute FFT
-    extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
-    FFT().execute(thread_data, shared_mem, workspace);
+    if (!disable_compute) {
+        extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
+        FFT().execute(thread_data, shared_mem, workspace);
+    }
 
     // Save results
     store_layered<FFT>(thread_data, data, local_fft_id, active_layers, extra_layers);
@@ -72,7 +75,13 @@ void dispatch_function(void* params, cudaStream_t strm) {
     // Launch the kernel
     fft_padded_kernel<FFT>
         <<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(
-            fft_params->data, workspace, fft_params->signal_length, fft_params->active_layers, fft_params->extra_layers);
+            fft_params->data,
+            workspace,
+            fft_params->signal_length,
+            fft_params->active_layers,
+            fft_params->extra_layers,
+            get_disable_compute()
+        );
 }
 
 void fft_impl(torch::Tensor input, int signal_length) {
@@ -163,6 +172,7 @@ void fft_layered_impl(torch::Tensor input, int signal_length, int layer_count) {
 PYBIND11_MODULE(fft_nonstrided_padded, m) {
     m.doc() = "Implicitly zero-padded 1D real-to-complex FFT using cuFFTDx";
     m.def("fft", &fft_impl, "Perform a padded complex-to-complex FFT on a 1D input tensor");
+    m.def("set_disable_compute", &set_disable_compute_impl, "Enable/disable the use of custom FFT computations");
     m.def("fft_layered", &fft_layered_impl, "Perform a padded and layered complex-to-complex FFT on a 1D input tensor");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

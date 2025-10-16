@@ -61,10 +61,18 @@ std::pair<unsigned int, unsigned int> get_supported_batches_runtime(
         batch_size = 2;
     }
 
+    // if (FFTSize <= 1024 && factors.first >= 4) {
+    //     factors.first = factors.first / 4;
+    //     batch_size = 4;
+    // } else if (FFTSize <= 2048 && factors.first >= 2) {
+    //     factors.first = factors.first / 2;
+    //     batch_size = 2;
+    // }
+
     return {factors.first * factors.second, batch_size};
 }
 
-static constexpr std::array<std::pair<unsigned int, unsigned int>, 32>
+static constexpr std::array<std::pair<unsigned int, unsigned int>, 32> // 18
     SUPPORTED_FFT_CONFIGS = {{
                               {64, 1},
                               {64, 2},
@@ -180,3 +188,14 @@ std::vector<int> get_supported_sizes() {
 
     return sizes;
 }
+
+bool __disable_compute = false;
+
+void set_disable_compute_impl(bool disable) {
+    __disable_compute = disable;
+}
+
+bool get_disable_compute() {
+    return __disable_compute;
+}
+

@@ -24,15 +24,17 @@ struct FFTParams {
 
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block)
-__global__ void fft_kernel(float2* data) {
+__global__ void fft_kernel(float2* data, bool disable_compute) {
 
     float2 thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
 
     load_nonstrided<FFT>(data, thread_data, local_fft_id);
 
-    extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
-    FFT().execute(thread_data, shared_mem);
+    if (!disable_compute) {
+        extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
+        FFT().execute(thread_data, shared_mem);
+    }
 
     store_nonstrided<FFT>(thread_data, data, local_fft_id);
 }
@@ -55,7 +57,12 @@ void dispatch_function(void* params, cudaStream_t strm) {
             fft_kernel<FFT>,
             cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
-        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data);
+
+
+        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            get_disable_compute()
+        );
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
     } else {
         using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
@@ -69,7 +76,10 @@ void dispatch_function(void* params, cudaStream_t strm) {
             fft_kernel<FFT>,
             cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
-        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data);
+        fft_kernel<FFT><<<fft_params->outer_batch_count, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            get_disable_compute()
+        );
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 
     }
@@ -117,5 +127,6 @@ void fft_impl(torch::Tensor input, bool direction) {
 PYBIND11_MODULE(fft_nonstrided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT operations using cuFFTDx";
     m.def("fft", &fft_impl, "In-place 1D C2C FFT using cuFFTDx.");
+    m.def("set_disable_compute", &set_disable_compute_impl, "Enable/disable the use of custom FFT computations");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

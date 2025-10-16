@@ -57,7 +57,7 @@ def run_convolution_strided_padded_test(fft_shape: int, dtype: torch.dtype, sign
     torch.fft.ifft(x0, out=x0, dim=-2)
     x0 *= float(fft_shape[-2])
 
-    conv_strided_padded.conv(x1, kernel_transposed, signal_length, False)
+    conv_strided_padded.conv(x1, kernel_transposed, signal_length)
 
     assert torch.allclose(x0, x1, atol=5e-3), "FFT results do not match ground truth"
 

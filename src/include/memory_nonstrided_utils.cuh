@@ -8,11 +8,12 @@ static inline __device__
 void load_nonstrided(const float2* input, float2* thread_data, unsigned int  local_fft_id) {
 
     unsigned int global_fft_id =
-        blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
+    blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
     const unsigned int offset = FFT::input_length * global_fft_id;
     const unsigned int stride = FFT::stride;
     unsigned int       index  = offset + threadIdx.x;
 
+    #pragma unroll
     for (unsigned int i = 0; i < FFT::input_ept; ++i) {
         if ((i * stride + threadIdx.x) < FFT::input_length) {
             thread_data[i] = input[index];
@@ -31,6 +32,7 @@ void store_nonstrided(const float2* thread_data, float2* output, unsigned int lo
     const unsigned int stride = FFT::stride;
     unsigned int       index  = offset + threadIdx.x;
 
+    #pragma unroll
     for (int i = 0; i < FFT::output_ept; ++i) {
         if ((i * stride + threadIdx.x) < FFT::output_length) {
             output[index] = thread_data[i];

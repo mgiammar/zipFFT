@@ -21,6 +21,8 @@
 #include "../include/dispatch_table_utils.cuh"
 #include "../include/memory_strided_utils.cuh"
 
+
+
 struct FFTParams {
     float2* data;
     unsigned int inner_batch_count;
@@ -30,17 +32,18 @@ struct FFTParams {
 
 template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block)
-__global__ void fft_strided_kernel(float2* data, unsigned int inner_batch_count) {
+__global__ void fft_strided_kernel(float2* data, unsigned int inner_batch_count, bool disable_compute) {
 
     float2 thread_data[FFT::storage_size];
-    const unsigned int local_fft_id = threadIdx.y;
     extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
     
-    load_strided_smem<FFT>(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block);
+    load_strided_smem<FFT>(data, thread_data, shared_mem, inner_batch_count * FFT::ffts_per_block);
 
-    FFT().execute(thread_data, shared_mem);
+    if (!disable_compute) {
+        FFT().execute(thread_data, shared_mem);
+    }
 
-    store_strided_smem<FFT>(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block, false);
+    store_strided_smem<FFT>(thread_data, shared_mem, data, inner_batch_count * FFT::ffts_per_block);
 }
 
 template <unsigned int FFTSize, unsigned int BatchSize, unsigned int Arch>
@@ -63,7 +66,11 @@ void dispatch_function(void* params, cudaStream_t strm) {
         
         dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
 
-        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data, fft_params->inner_batch_count);
+        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            fft_params->inner_batch_count,
+            get_disable_compute()
+        );
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
     } else {
         using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
@@ -79,7 +86,11 @@ void dispatch_function(void* params, cudaStream_t strm) {
 
         dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
 
-        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data, fft_params->inner_batch_count);
+        fft_strided_kernel<FFT><<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            fft_params->inner_batch_count,
+            get_disable_compute()
+        );
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 
     }
@@ -146,5 +157,6 @@ PYBIND11_MODULE(fft_strided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT operations using cuFFTDx";
     m.def("fft", &fft_strided, "In-place 1D C2C FFT using cuFFTDx.");
     m.def("ifft", &ifft_strided, "In-place 1D C2C IFFT using cuFFTDx.");
+    m.def("set_disable_compute", &set_disable_compute_impl, "Enable/disable the use of custom FFT computations");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

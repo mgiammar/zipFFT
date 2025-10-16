@@ -28,64 +28,126 @@ struct FFTParams {
     unsigned int outer_batch_count;
     int s;
     bool get_params;
-    bool disable_transpose;
+    bool print_params;
     bool kernel_transpose;
     size_t size_result;
 };
 
-template <class FFT, class FFT_inv, bool kernel_transpose, bool disable_transpose>
+template <class FFT>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void conv_strided_padded_kernel(float2* data, float2* kernel, unsigned int inner_batch_count, int s) {
+    void kernel_transpose_kernel(
+        float2* data,
+        float2* kernel,
+        unsigned int inner_batch_count) {
 
     extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
     
     // Local array for thread
     float2 thread_data[FFT::storage_size];
-    const unsigned int local_fft_id = threadIdx.y;
-    load_strided_padded_smem<FFT, disable_transpose>(data, thread_data, shared_mem, local_fft_id, inner_batch_count * FFT::ffts_per_block, s);
+    load_strided_padded_smem<FFT>(
+        data,
+        thread_data,
+        shared_mem,
+        inner_batch_count * FFT::ffts_per_block,
+        cufftdx::size_of<FFT>::value
+    );
 
-    if constexpr (!kernel_transpose) {
-        // Execute the FFT with shared memory
-        FFT().execute(thread_data, shared_mem);
-
-        __syncthreads();
-
-        float2 kernel_thread_data[FFT::storage_size];
-        load_transposed_kernel<FFT>(kernel, kernel_thread_data);
-
-        // complex multiplication in the frequency domain
-        for (unsigned int i = 0; i < FFT::elements_per_thread; ++i) {
-            float2 a;
-            a.x = thread_data[i].x;
-            a.y = thread_data[i].y;
-
-            float2 b;
-            b.x = kernel_thread_data[i].x;
-            b.y = kernel_thread_data[i].y;
-            
-            float2 c;
-            c.x = a.x * b.x - a.y * b.y;
-            c.y = a.x * b.y + a.y * b.x;
-
-            thread_data[i].x = c.x;
-            thread_data[i].y = c.y;
-        }
-
-        FFT_inv().execute(thread_data, shared_mem);
-
-        store_strided_smem<FFT>(thread_data, shared_mem, data, local_fft_id, inner_batch_count * FFT::ffts_per_block, disable_transpose);
-    } else {
-        store_transposed_kernel<FFT>(thread_data, kernel);
+    const size_t kernel_stride       = blockDim.x * blockDim.y * gridDim.x * gridDim.y;
+    size_t       kernel_index        = threadIdx.x + blockDim.x * threadIdx.y;
+    kernel_index += (blockIdx.x + gridDim.x * blockIdx.y) * blockDim.x * blockDim.y;
+    for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+        kernel[kernel_index] = thread_data[i];
+        kernel_index += kernel_stride;
     }
-    
 }
 
 template <
 unsigned int FFTSize,
 unsigned int BatchSize,
-unsigned int Arch,
-bool kernel_transpose,
-bool disable_transpose>
+unsigned int Arch>
+void do_kernel_transpose(struct FFTParams* fft_params, cudaStream_t strm) {
+    using namespace cufftdx;
+
+
+    using FFT_Base = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+                                 Precision<float>() +
+                                 ElementsPerThread<8u>() +
+                                 FFTsPerBlock<BatchSize>() + SM<Arch>());
+
+    using FFT = decltype(FFT_Base() + Direction<fft_direction::forward>());
+
+    // Increase shared memory size, if needed
+    CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+        kernel_transpose_kernel<FFT>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
+    dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
+
+    kernel_transpose_kernel<FFT>
+        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            fft_params->kernel,
+            fft_params->inner_batch_count
+        );
+    CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
+}
+
+template <class FFT, class FFT_inv>
+__launch_bounds__(FFT::max_threads_per_block) __global__
+    void conv_strided_padded_kernel(
+        float2* data,
+        float2* kernel,
+        unsigned int inner_batch_count,
+        int s,
+        bool disable_compute) {
+
+    extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
+    
+    // Local array for thread
+    float2 thread_data[FFT::storage_size];
+    load_strided_padded_smem<FFT>(data, thread_data, shared_mem, inner_batch_count * FFT::ffts_per_block, s);
+
+    // Execute the FFT with shared memory
+    if (!disable_compute)
+        FFT().execute(thread_data, shared_mem);
+
+    __syncthreads();
+
+    const size_t kernel_stride       = blockDim.x * blockDim.y * gridDim.x * gridDim.y;
+    size_t       kernel_index        = threadIdx.x + blockDim.x * threadIdx.y;
+    kernel_index += (blockIdx.x + gridDim.x * blockIdx.y) * blockDim.x * blockDim.y;
+
+    // complex multiplication in the frequency domain
+    for (unsigned int i = 0; i < FFT::elements_per_thread; ++i) {
+        float2 kernel_thread_data = kernel[kernel_index];
+        kernel_index += kernel_stride;
+
+        float2 a;
+        a.x = thread_data[i].x;
+        a.y = thread_data[i].y;
+
+        float2 b;
+        b.x = kernel_thread_data.x;
+        b.y = kernel_thread_data.y;
+        
+        float2 c;
+        c.x = a.x * b.x - a.y * b.y;
+        c.y = a.x * b.y + a.y * b.x;
+
+        thread_data[i].x = c.x;
+        thread_data[i].y = c.y;
+    }
+    
+    if (!disable_compute)
+        FFT_inv().execute(thread_data, shared_mem);
+
+    store_strided_smem<FFT>(thread_data, shared_mem, data, inner_batch_count * FFT::ffts_per_block);
+}
+
+template <
+unsigned int FFTSize,
+unsigned int BatchSize,
+unsigned int Arch>
 void do_padded_conv(struct FFTParams* fft_params, cudaStream_t strm) {
     using namespace cufftdx;
 
@@ -100,15 +162,22 @@ void do_padded_conv(struct FFTParams* fft_params, cudaStream_t strm) {
 
     // Increase shared memory size, if needed
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        conv_strided_padded_kernel<FFT, FFT_inv, kernel_transpose, disable_transpose>,
+        conv_strided_padded_kernel<FFT, FFT_inv>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
     dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
 
-    conv_strided_padded_kernel<FFT, FFT_inv, kernel_transpose, disable_transpose>
-        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(fft_params->data, fft_params->kernel, fft_params->inner_batch_count, fft_params->s);
+    conv_strided_padded_kernel<FFT, FFT_inv>
+        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+            fft_params->data,
+            fft_params->kernel,
+            fft_params->inner_batch_count,
+            fft_params->s,
+            get_disable_compute()
+        );
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 }
+
 
 
 template <unsigned int FFTSize, unsigned int BatchSize, unsigned int Arch>
@@ -124,6 +193,18 @@ void dispatch_function(void* params, cudaStream_t strm) {
                                  ElementsPerThread<8u>() +
                                  FFTsPerBlock<BatchSize>() + SM<Arch>());
 
+        if(fft_params->print_params) {
+            std::cout << "FFT Size: " << FFTSize << ", Batch Size: " << BatchSize << ", Arch: " << Arch << std::endl;
+            std::cout << "Block Dim: (" << FFT::block_dim.x << ", " << FFT::block_dim.y << ", " << FFT::block_dim.z << ")" << std::endl;
+            std::cout << "Max Threads per Block: " << FFT::max_threads_per_block << std::endl;
+            std::cout << "Elements per Thread: " << FFT::elements_per_thread << std::endl;
+            std::cout << "Outer Batch Count: " << fft_params->outer_batch_count << std::endl;
+            std::cout << "Inner Batch Count: " << fft_params->inner_batch_count << std::endl;
+            std::cout << "FFTs per Block: " << FFT::ffts_per_block << std::endl;
+            std::cout << "Shared Memory Size: " << FFT::shared_memory_size << " bytes" << std::endl;
+            std::cout << "Storage Size per Thread: " << FFT::storage_size * sizeof(float2) << " bytes" << std::endl;
+        }
+
         fft_params->size_result = FFT::block_dim.x * FFT::block_dim.y * FFT::block_dim.z *
             fft_params->outer_batch_count * fft_params->inner_batch_count * FFT::elements_per_thread;
 
@@ -131,23 +212,15 @@ void dispatch_function(void* params, cudaStream_t strm) {
     }
     
     if(fft_params->kernel_transpose) {
-        if (fft_params->disable_transpose) {
-            do_padded_conv<FFTSize, BatchSize, Arch, true, true>(fft_params, strm);
-        } else {
-            do_padded_conv<FFTSize, BatchSize, Arch, true, false>(fft_params, strm);
-        }
-    } else {
-        if (fft_params->disable_transpose) {
-            do_padded_conv<FFTSize, BatchSize, Arch, false, true>(fft_params, strm);
-        } else {
-            do_padded_conv<FFTSize, BatchSize, Arch, false, false>(fft_params, strm);
-        }
+        do_kernel_transpose<FFTSize, BatchSize, Arch>(fft_params, strm);
+        return;
     }
 
+    do_padded_conv<FFTSize, BatchSize, Arch>(fft_params, strm);
 }
 
 // Common implementation function
-void conv_strided_padded_impl(torch::Tensor input, torch::Tensor kernel, int s, bool disable_transpose) {
+void conv_strided_padded_impl(torch::Tensor input, torch::Tensor kernel, int s) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -200,7 +273,6 @@ void conv_strided_padded_impl(torch::Tensor input, torch::Tensor kernel, int s, 
     fft_params.outer_batch_count = outer_batch_count;
     fft_params.s = s;
     fft_params.get_params = false;
-    fft_params.disable_transpose = disable_transpose;
     fft_params.kernel_transpose = false;
 
     fft_func(&fft_params);
@@ -259,7 +331,6 @@ void conv_kernel_transpose_impl(torch::Tensor kernel, torch::Tensor kernel_trans
     fft_params.outer_batch_count = outer_batch_count;
     fft_params.s = fft_size;
     fft_params.get_params = false;
-    fft_params.disable_transpose = false;
     fft_params.kernel_transpose = true;
 
     fft_func(&fft_params);
@@ -267,7 +338,7 @@ void conv_kernel_transpose_impl(torch::Tensor kernel, torch::Tensor kernel_trans
 
 
 // Common implementation function
-size_t conv_kernel_size_impl(torch::Tensor input) {
+size_t conv_kernel_size_impl(torch::Tensor input, bool print_params) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -311,7 +382,7 @@ size_t conv_kernel_size_impl(torch::Tensor input) {
     fft_params.inner_batch_count = inner_batch_count;
     fft_params.outer_batch_count = outer_batch_count;
     fft_params.get_params = true;
-    fft_params.disable_transpose = false;
+    fft_params.print_params = print_params;
     fft_params.s = 0;
 
     fft_func(&fft_params);
@@ -326,5 +397,6 @@ PYBIND11_MODULE(conv_strided_padded, m) {  // First arg needs to match name in s
     m.def("conv", &conv_strided_padded_impl, "In-place 1D C2C FFT using cuFFTDx.");
     m.def("conv_kernel_transpose", &conv_kernel_transpose_impl, "Transpose kernel for 1D C2C FFT convolution using cuFFTDx.");
     m.def("conv_kernel_size", &conv_kernel_size_impl, "In-place 1D C2C FFT using cuFFTDx.");
+    m.def("set_disable_compute", &set_disable_compute_impl, "Enable/disable the use of custom FFT computations");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }
