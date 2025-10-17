@@ -62,45 +62,6 @@ struct io_padded {
         }
     }
 
-    // // Slight re-definition from the load function to allow for strided memory
-    // // access while maintaining zero padding logic based on signal length
-    // template <unsigned int Stride, unsigned int Batches = Stried, typename RegisterType,
-    //           typename IOType>
-    // static inline __device__ void load_strided(const IOType* input, RegisterType* thread_data,
-    //                                            unsigned int local_fft_id) {
-    //     using input_t = typename FFT::input_type;
-    //     using complex_type = typename FFT::value_type;
-
-    //     constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
-
-    //     // Calculate global offset of FFT batch
-    //     const unsigned int batch_offset = batch_offset_strided(local_fft_id);
-    //     const unsigned int bid = batch_id(local_fft_id);
-
-    //     // Get stride, this include how many elements are split between threads and memory access
-    //     // pattern
-    //     const unsigned int fft_stride = FFT::stride;
-    //     const unsigned int stride = Stride * fft_stride;
-    //     unsigned int index = batch_offset + (threadIdx.x * Stride);
-
-    //     for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
-    //         for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-    //             if (bid < Batches) {
-    //                 if ((i * fft_stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit)
-    //                 <
-    //                     SignalLength) {
-    //                     reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-    //                     reinterpret_cast<const IOType*>(input)[index = j];
-    //                 } else {  // placing a zero into memory instead
-    //                     reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-    //                     get_zero<IoType>();
-    //                 }
-    //             }
-    //         }
-    //         index += inner_loop_limit * stride;
-    //     }
-    // }
-
     // Store data based on a stride length. Any values in the registers which exceed
     // stride length will be skipped on their storage.
     template <typename RegisterType, typename IOType>
@@ -132,4 +93,4 @@ struct io_padded {
 
 }  // namespace zipfft
 
-#endif
+#endif  // ZIPFFT_IO_PADDED_HPP_

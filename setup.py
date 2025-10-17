@@ -26,7 +26,7 @@ def parse_cuda_architectures():
     parser.add_argument(
         "--enable-extensions",
         dest="enable_extensions",
-        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d")',
+        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,strided_padded_cfft1d")',
         default=None,  # Will use env var or fallback if None
     )
 
@@ -60,7 +60,7 @@ cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 enabled_exts_str = (
     parsed_args.enable_extensions
     or os.environ.get("ENABLED_EXTENSIONS")
-    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d"
+    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,strided_padded_cfft1d"
 )
 enabled_extensions = [ext.strip() for ext in enabled_exts_str.split(",")]
 
@@ -167,6 +167,15 @@ if "strided_cfft1d" in enabled_extensions:
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(strided_complex_fft_1d_extension)
+
+if "strided_padded_cfft1d" in enabled_extensions:
+    strided_padded_complex_fft_1d_extension = CUDAExtension(
+        name="zipfft.strided_padded_cfft1d",
+        sources=["src/cuda/strided_padded_complex_fft_1d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(strided_padded_complex_fft_1d_extension)
 
 # Write build configuration to a file for testing
 build_config = {

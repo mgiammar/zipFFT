@@ -13,14 +13,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    io_strided::load_strided(data, thread_data, local_fft_id);
+    io_strided::load(data, thread_data, local_fft_id);
 
     // Execute the FFT within shared memory
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
     // Save results back to global memory
-    io_strided::store_strided(thread_data, data, local_fft_id);
+    io_strided::store(thread_data, data, local_fft_id);
 }
 
 // --- Launcher Definition ---

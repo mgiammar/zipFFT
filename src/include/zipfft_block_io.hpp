@@ -101,6 +101,7 @@ struct io {
     // Check if the register type and FFT structure are type compatible
     template <typename RegisterType, typename MemoryType>
     static constexpr bool is_type_compatible() {
+        // TODO: Check why using 'complex_type' rather than 'MemoryType' here?
         return !CUFFTDX_STD::is_void_v<RegisterType> &&
                (sizeof(RegisterType) == sizeof(complex_type)) &&
                (alignof(RegisterType) == alignof(complex_type));
@@ -112,6 +113,7 @@ struct io {
         // it so a "single" batch of complex __half2 values in reality contains 2 batches of
         // complex __half values. Full reference can be found in documentation:
         // https://docs.nvidia.com/cuda/cufftdx/api/methods.html#half-precision-implicit-batching
+        // FFT::implicit_type_batching is 2 for __half and 1 for other types
         unsigned int global_fft_id =
             blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
         return FFT::input_length * global_fft_id;

@@ -110,14 +110,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
     // Grid dimension (blockIdx.x) for row/col handled automatically.
     const unsigned int local_fft_id = threadIdx.y;
-    input_utils::load_strided<Stride>(data, thread_data, local_fft_id);
+    input_utils::load<Stride>(data, thread_data, local_fft_id);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem, workspace);
 
     // Save results
-    output_utils::store_strided<Stride, FFT::output_length>(thread_data, data, local_fft_id);
+    output_utils::store<Stride, FFT::output_length>(thread_data, data, local_fft_id);
 }
 
 // template<class FFTF,
@@ -142,10 +142,10 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 //     const unsigned int local_fft_id = threadIdx.y;
 //     // Load data from global memory to registers
 //     if constexpr (UseSharedMemoryStridedIO) {
-//         example::io_strided<FFTF>::load_strided<Stride, SizeY>(input,
+//         example::io_strided<FFTF>::load<Stride, SizeY>(input,
 //         thread_data, shared_mem, local_fft_id);
 //     } else {
-//         example::io_strided<FFTF>::load_strided<Stride, SizeY>(input,
+//         example::io_strided<FFTF>::load<Stride, SizeY>(input,
 //         thread_data, local_fft_id);
 //     }
 
@@ -159,10 +159,10 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
 //     // Save results
 //     if constexpr (UseSharedMemoryStridedIO) {
-//         example::io_strided<FFTI>::store_strided<Stride, SizeY>(thread_data,
+//         example::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
 //         shared_mem, output, local_fft_id);
 //     } else {
-//         example::io_strided<FFTI>::store_strided<Stride, SizeY>(thread_data,
+//         example::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
 //         output, local_fft_id);
 //     }
 // }

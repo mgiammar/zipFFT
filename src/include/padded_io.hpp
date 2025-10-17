@@ -66,7 +66,7 @@ namespace example {
         // to underlying data while retaining the zero-padding logic.
         template<unsigned int Stride, unsigned int Batches = Stride, typename RegisterType, typename IOType, typename LoadOp = example::identity>
         static inline __device__ void
-            load_strided(const IOType* input,
+            load(const IOType* input,
                          RegisterType* thread_data,
                          unsigned int  local_fft_id,
                          LoadOp op = {}) {

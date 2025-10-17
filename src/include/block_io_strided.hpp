@@ -24,7 +24,7 @@ namespace example {
         ////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads / stores for 2d FFTs, based on stride and batches for specific dimension (inner most)
         template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
-        static inline __device__ void load_strided(const InputOutputType* input,
+        static inline __device__ void load(const InputOutputType* input,
                                                    complex_type*          thread_data,
                                                    unsigned int           local_fft_id) {
             // Calculate global offset of FFT batch
@@ -44,7 +44,7 @@ namespace example {
         }
 
         template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
-        static inline __device__ void store_strided(const complex_type* thread_data,
+        static inline __device__ void store(const complex_type* thread_data,
                                                     InputOutputType*    output,
                                                     unsigned int        local_fft_id) {
             const unsigned int batch_offset = batch_offset_strided(local_fft_id);
@@ -64,7 +64,7 @@ namespace example {
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads and stores for 2d FFTs with shared memory used, based on stride and batches for specific dimension (inner most)
         template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
-        static inline __device__ void load_strided(const InputOutputType* input,
+        static inline __device__ void load(const InputOutputType* input,
                                                    complex_type*          thread_data,
                                                    InputOutputType*       shared_memory,
                                                    unsigned int           local_fft_id) {
@@ -98,7 +98,7 @@ namespace example {
         }
 
         template<unsigned int Stride, unsigned int Batches = Stride, typename InputOutputType>
-        static inline __device__ void store_strided(const complex_type* thread_data,
+        static inline __device__ void store(const complex_type* thread_data,
                                                     InputOutputType*    shared_memory,
                                                     InputOutputType*    output,
                                                     unsigned int        local_fft_id) {

@@ -99,7 +99,7 @@ namespace example {
         /////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads and stores for 2d and 3d FFTs, based on FFT's sizes and specific dimension
         template<dimension_description Dimension, unsigned int SizeX, unsigned int SizeY, unsigned int SizeZ = 1, typename InputOutputType>
-        static inline __device__ void load_strided(const InputOutputType* input,
+        static inline __device__ void load(const InputOutputType* input,
                                                    complex_type*          thread_data,
                                                    unsigned int           local_fft_id) {
             using dah_type = detail::data_access_helper<Dimension, SizeX, SizeY, SizeZ>;
@@ -124,7 +124,7 @@ namespace example {
         }
 
         template<dimension_description Dimension, unsigned int SizeX, unsigned int SizeY, unsigned int SizeZ = 1, typename InputOutputType>
-        static inline __device__ void store_strided(const complex_type* thread_data,
+        static inline __device__ void store(const complex_type* thread_data,
                                                     InputOutputType*    output,
                                                     unsigned int        local_fft_id) {
             using dah_type = detail::data_access_helper<Dimension, SizeX, SizeY, SizeZ>;
@@ -151,7 +151,7 @@ namespace example {
         //////////////////////////////////////////////////////////////////////////////////////////////////////
         // Note: loads and stores for 2d and 3d FFTs with shared memory used, based on FFT's sizes and specific dimension
         template<dimension_description Dimension, unsigned int SizeX, unsigned int SizeY, unsigned int SizeZ = 1, typename InputOutputType>
-        static inline __device__ void load_strided(const InputOutputType* input,
+        static inline __device__ void load(const InputOutputType* input,
                                                    complex_type*          thread_data,
                                                    InputOutputType*       shared_memory,
                                                    unsigned int           local_fft_id) {
@@ -191,7 +191,7 @@ namespace example {
         }
 
         template<dimension_description Dimension, unsigned int SizeX, unsigned int SizeY, unsigned int SizeZ = 1, typename InputOutputType>
-        static inline __device__ void store_strided(const complex_type* thread_data,
+        static inline __device__ void store(const complex_type* thread_data,
                                                     InputOutputType*    shared_memory,
                                                     InputOutputType*    output,
                                                     unsigned int        local_fft_id) {
