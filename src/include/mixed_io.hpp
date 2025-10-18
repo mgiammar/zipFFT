@@ -145,7 +145,7 @@ namespace example {
                                            unsigned int           local_fft_id) {
             using complex_type = typename FFT::value_type;
             // Calculate global offset of FFT batch
-            const unsigned int offset = example::io<FFT>::input_batch_offset(local_fft_id);
+            const unsigned int offset = zipfft::io<FFT>::input_batch_offset(local_fft_id);
             // Get stride, this shows how elements from batch should be split between threads
             const unsigned int stride = FFT::stride;
             unsigned int       index  = offset + threadIdx.x;
@@ -163,7 +163,7 @@ namespace example {
                                             unsigned int                local_fft_id) {
             using io_precision = typename InputOutputType::value_type;
 
-            const unsigned int offset = example::io<FFT>::output_batch_offset(local_fft_id);
+            const unsigned int offset = zipfft::io<FFT>::output_batch_offset(local_fft_id);
             const unsigned int stride = FFT::stride;
             unsigned int       index  = offset + threadIdx.x;
             for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {

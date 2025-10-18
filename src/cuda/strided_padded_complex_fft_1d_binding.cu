@@ -256,7 +256,7 @@ void strided_padded_fft_c2c_1d_impl(torch::Tensor input, torch::Tensor output, i
         // - output has shape (signal_length, stride) or (batch, signal_length, stride)
 
         fft_size = input.dim() == 2 ? input.size(0) : input.size(1);
-        signal_length = n;
+        signal_length = output.dim() == 2 ? output.size(0) : output.size(1);
 
         // Check that data is either 2D or 3D
         if (input.dim() != 2 && input.dim() != 3) {

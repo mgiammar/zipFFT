@@ -1,8 +1,8 @@
 #include <cufftdx.hpp>
 
-#include "../include/block_io.hpp"
-#include "../include/common.hpp"
-#include "../include/padded_io.hpp"
+#include "../include/zipfft_block_io.hpp"
+#include "../include/zipfft_common.hpp"
+#include "../include/zipfft_padded_io.hpp"
 
 /**
  * @brief Execute the first real-to-complex FFT along the Y dimension
@@ -28,8 +28,8 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using scalar_type = typename complex_type::value_type;
 
     // Input is padded, use padded I/O utilities. Output is not padded
-    using input_utils = example::io_padded<FFT, SignalLengthX>;
-    using output_utils = example::io<FFT>;
+    using input_utils = zipfft::io_padded<FFT, SignalLengthX>;
+    using output_utils = zipfft::io<FFT>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
@@ -67,7 +67,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
-    using io_utils = example::io<FFT>;
+    using io_utils = zipfft::io<FFT>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
@@ -102,8 +102,8 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using complex_type = typename FFT::value_type;
 
     // Input is padded, but output is not padded. Use two different i/o.
-    using input_utils = example::io_padded<FFT, SignalLength>;
-    using output_utils = example::io_strided<FFT>;
+    using input_utils = zipfft::io_padded<FFT, SignalLength>;
+    using output_utils = zipfft::io_strided<FFT>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
@@ -142,10 +142,10 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 //     const unsigned int local_fft_id = threadIdx.y;
 //     // Load data from global memory to registers
 //     if constexpr (UseSharedMemoryStridedIO) {
-//         example::io_strided<FFTF>::load<Stride, SizeY>(input,
+//         zipfft::io_strided<FFTF>::load<Stride, SizeY>(input,
 //         thread_data, shared_mem, local_fft_id);
 //     } else {
-//         example::io_strided<FFTF>::load<Stride, SizeY>(input,
+//         zipfft::io_strided<FFTF>::load<Stride, SizeY>(input,
 //         thread_data, local_fft_id);
 //     }
 
@@ -159,10 +159,10 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
 //     // Save results
 //     if constexpr (UseSharedMemoryStridedIO) {
-//         example::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
+//         zipfft::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
 //         shared_mem, output, local_fft_id);
 //     } else {
-//         example::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
+//         zipfft::io_strided<FFTI>::store<Stride, SizeY>(thread_data,
 //         output, local_fft_id);
 //     }
 // }
@@ -237,7 +237,7 @@ template <typename InputType, typename OutputType, unsigned int SignalLengthX,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
 inline void padded_block_real_fft_2d(InputType* input_data, OutputType* output_data) {
     // Get the CUDA architecture version
-    auto arch = example::get_cuda_device_arch();
+    auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
