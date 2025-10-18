@@ -35,21 +35,33 @@ struct StridedComplexFFTConfig1D {
 
 // Define supported FFT configurations at the top of the file for easy
 // modification Format: (fft_size, stride, batch_size, is_forward)
-static constexpr std::array<std::tuple<unsigned int, unsigned int, unsigned int, bool>, 12>
+static constexpr std::array<std::tuple<unsigned int, unsigned int, unsigned int, bool>, 24>
     SUPPORTED_FFT_CONFIGS = {{                      // Forward FFT configurations
                               {64, 32, 1, true},    // 2D input (64, 32)
+                              {64, 32, 4, true},    // 2D input (64, 32), 4 batches
                               {64, 64, 1, true},    // 2D input (64, 64)
+                              {64, 64, 4, true},    // 2D input (64, 64), 4 batches
                               {64, 128, 1, true},   // 2D input (64, 128)
+                              {64, 128, 4, true},   // 2D input (64, 128), 4 batches
                               {128, 64, 1, true},   // 2D input (128, 64)
+                              {128, 64, 4, true},   // 2D input (128, 64), 4 batches
                               {128, 128, 1, true},  // 2D input (128, 128)
+                              {128, 128, 4, true},  // 2D input (128, 128), 4 batches
                               {128, 256, 1, true},  // 2D input (128, 256)
+                              {128, 256, 4, true},  // 2D input (128, 256), 4 batches
                                                     // Inverse FFT configurations
                               {64, 32, 1, false},
+                              {64, 32, 4, false},
                               {64, 64, 1, false},
+                              {64, 64, 4, false},
                               {64, 128, 1, false},
+                              {64, 128, 4, false},
                               {128, 64, 1, false},
+                              {128, 64, 4, false},
                               {128, 128, 1, false},
-                              {128, 256, 1, false}}};
+                              {128, 128, 4, false},
+                              {128, 256, 1, false},
+                              {128, 256, 4, false}}};
 
 // Template dispatch functions for each supported configuration
 template <unsigned int FFTSize, unsigned int Stride, unsigned int BatchSize, bool IsForwardFFT>

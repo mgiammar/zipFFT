@@ -32,6 +32,11 @@ try:
 except ImportError:
     strided_cfft1d = None
 
+try:
+    from . import strided_padded_cfft1d
+except ImportError:
+    strided_padded_cfft1d = None
+
 # Load build config if available
 try:
     from .build_config import CUDA_ARCHITECTURES, ENABLED_EXTENSIONS

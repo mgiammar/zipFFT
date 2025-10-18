@@ -1,7 +1,7 @@
 #include <cufftdx.hpp>
 
-#include "../include/block_io.hpp"
-#include "../include/common.hpp"
+#include "../include/zipfft_block_io.hpp"
+#include "../include/zipfft_common.hpp"
 
 // --- Kernel Definition ---
 template <class FFT>
@@ -11,14 +11,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    example::io<FFT>::load(data, thread_data, local_fft_id);
+    zipfft::io<FFT>::load(data, thread_data, local_fft_id);
 
     // Execute the FFT with shared memory
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
     // Save results back to global memory
-    example::io<FFT>::store(thread_data, data, local_fft_id);
+    zipfft::io<FFT>::store(thread_data, data, local_fft_id);
 }
 
 // --- Launcher Definition ---
@@ -29,7 +29,7 @@ inline void block_fft_c2c_1d_launcher(T* data) {
     using namespace cufftdx;
 
     // Since complex input to FFT, convert vector into its scalar type
-    using scalar_precision_type = example::get_scalar_component_t<T>;
+    using scalar_precision_type = zipfft::get_scalar_component_t<T>;
     constexpr auto fft_direction =
         IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
 
@@ -73,7 +73,7 @@ inline void block_fft_c2c_1d_launcher(T* data) {
 template <typename T, unsigned int FFTSize, bool IsForwardFFT,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
 int block_complex_fft_1d(T* data) {
-    auto arch = example::get_cuda_device_arch();
+    auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
