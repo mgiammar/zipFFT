@@ -1,7 +1,7 @@
 #include <cufftdx.hpp>
 
-#include "../include/block_io.hpp"
-#include "../include/common.hpp"
+#include "../include/zipfft_block_io.hpp"
+#include "../include/zipfft_common.hpp"
 
 // --- r2c & c2r Kernel Definitions ---
 template <class FFT, typename ComplexType = typename FFT::value_type,
@@ -16,14 +16,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
     // Then load data from global memory to local memory
     const unsigned int local_fft_id = threadIdx.y;
-    example::io<FFT>::load(input_data, thread_data, local_fft_id);
+    zipfft::io<FFT>::load(input_data, thread_data, local_fft_id);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
     // Save results
-    example::io<FFT>::store(thread_data, output_data, local_fft_id);
+    zipfft::io<FFT>::store(thread_data, output_data, local_fft_id);
 }
 
 template <class FFT, typename ComplexType = typename FFT::value_type,
@@ -38,14 +38,14 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
     // Then load data from global memory to local memory
     const unsigned int local_fft_id = threadIdx.y;
-    example::io<FFT>::load(input_data, thread_data, local_fft_id);
+    zipfft::io<FFT>::load(input_data, thread_data, local_fft_id);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
     // Save results
-    example::io<FFT>::store(thread_data, output_data, local_fft_id);
+    zipfft::io<FFT>::store(thread_data, output_data, local_fft_id);
 }
 
 // --- Unified Launcher Definition (for both r2c & c2r) ---
@@ -109,7 +109,7 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
 template <typename Input_T, typename Output_T, unsigned int FFTSize, bool IsForwardFFT,
           unsigned int elements_per_thread, unsigned int FFTs_per_block>
 int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
-    auto arch = example::get_cuda_device_arch();
+    auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures

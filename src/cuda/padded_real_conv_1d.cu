@@ -1,8 +1,8 @@
 #include <cufftdx.hpp>
 
-#include "../include/block_io.hpp"
-#include "../include/common.hpp"
-#include "../include/padded_io.hpp"
+#include "../include/zipfft_block_io.hpp"
+#include "../include/zipfft_common.hpp"
+#include "../include/zipfft_padded_io.hpp"
 
 /**
  * @brief Kernel which performs the cross-correlation of an implicitly padded
@@ -45,9 +45,9 @@ __launch_bounds__(ForwardFFT::max_threads_per_block) __global__
     using scalar_type = typename complex_type::value_type;
 
     // Input is padded (the data to be FFT-ed), output is not padded
-    using input_utils_padded = example::io_padded<ForwardFFT, FilterLength>;
-    // using input_utils = example::io<ForwardFFT>;
-    using output_utils = example::io<InverseFFT>;
+    using input_utils_padded = zipfft::io_padded<ForwardFFT, FilterLength>;
+    // using input_utils = zipfft::io<ForwardFFT>;
+    using output_utils = zipfft::io<InverseFFT>;
 
     // ID of FFT in CUDA block, in range [0, FFT::ffts_per_block)
     // Data here are loaded from global memory to local thread data based on
@@ -145,7 +145,7 @@ template <typename ScalarType, typename ComplexType, unsigned int FilterLength,
           unsigned int FFTs_per_block>
 int padded_block_conv_real_1d(ScalarType* input_data, ScalarType* output_data,
                               ComplexType* signal_data) {
-    auto arch = example::get_cuda_device_arch();
+    auto arch = zipfft::get_cuda_device_arch();
 
     // Switch statement to select appropriate architecture template param
     // NOTE: Using fallback to 900 for newer hopper/blackwell architectures
