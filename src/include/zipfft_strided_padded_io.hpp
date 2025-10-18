@@ -12,22 +12,26 @@ namespace zipfft {
 // is zero-padded up to a certain FFT length
 template <class FFT, unsigned int Stride, unsigned int SignalLength>
 struct io_strided_padded : public io<FFT> {
-    using complex_type = typename FFT::value_type;
-    using scalar_type = typename complex_type::value_type;
+    using io<FFT>::apparent_ffts_per_block;
 
-    static inline __device__ unsigned int batch_id(unsigned int local_fft_id) {
-        // Implicit batching is currently mandatory for __half precision, and it forces two
-        // batches of data to be put together into a single complex __half2 value. This makes
-        // it so a "single" batch of complex __half2 values in reality contains 2 batches of
-        // complex __half values. Full reference can be found in documentation:
-        // https://docs.nvidia.com/cuda/cufftdx/api/methods.html#half-precision-implicit-batching
-        unsigned int global_fft_id =
-            blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
-        return global_fft_id;
+    // Starting array offset for this batch within global memory
+    static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
+        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        return global_fft_id;  // corresponds to column in 2D array
     }
 
-    static inline __device__ unsigned int batch_offset_strided(unsigned int local_fft_id) {
-        return batch_id(local_fft_id);
+    // Starting array offset for this batch within global memory
+    static inline __device__ unsigned int output_batch_offset(unsigned int local_fft_id) {
+        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        return global_fft_id;  // corresponds to column in 2D array
+    }
+
+    static inline __device__ unsigned int input_batch_id(unsigned int local_fft_id) {
+        return input_batch_offset(local_fft_id);
+    }
+
+    static inline __device__ unsigned int output_batch_id(unsigned int local_fft_id) {
+        return output_batch_offset(local_fft_id);
     }
 
     // Do a zero-padded load of the data into the registers while accessing the
@@ -44,25 +48,25 @@ struct io_strided_padded : public io<FFT> {
     static inline __device__ void load(const IOType* input, RegisterType* thread_data,
                                        unsigned int local_fft_id) {
         using input_t = typename FFT::input_type;
-        using complex_type = typename FFT::value_type;
 
-        // Inner loop limit is being used for scalar <--> vector type conversion
         constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
+        const unsigned int batch_id = input_batch_id(local_fft_id);
 
-        // Calculate global offset of FFT batch
-        // NOTE: defining 'signal_length_limit' because we are interested in
-        // comparing the *strided* index within the loop
-        const unsigned int batch_offset = batch_offset_strided(local_fft_id);
-        const unsigned int bid = batch_id(local_fft_id);
+        const unsigned int batch_offset = input_batch_offset(local_fft_id);
         const unsigned int stride = Stride * FFT::stride;
-        const unsigned int signal_length_limit = SignalLength * Stride;
-        unsigned int index = batch_offset + threadIdx.x * (inner_loop_limit * Stride);
+        unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
 
+        const unsigned int signal_length_limit = SignalLength * Stride;
+
+        unsigned int read_idx;
+
+        // Loop over all elements doing appropriate memory reads
         for (unsigned int i = 0; i < FFT::input_ept; i++) {
             for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                // Check if the read index is within the signal length
-                if ((i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit) <
-                    signal_length_limit) {
+                // // Check batch ID against Batches to prevent out-of-bounds access
+                // if (batch_id < Batches) {
+                read_idx = (i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit);
+                if (read_idx < signal_length_limit) {
                     reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
                         reinterpret_cast<const IOType*>(input)[index + j];
                 } else {
@@ -70,6 +74,7 @@ struct io_strided_padded : public io<FFT> {
                         get_zero<IOType>();
                 }
                 index += inner_loop_limit * stride;
+                // }
             }
         }
     }
@@ -81,35 +86,32 @@ struct io_strided_padded : public io<FFT> {
     template <unsigned int Batches = Stride, typename RegisterType, typename IOType>
     static inline __device__ void store(const RegisterType* thread_data, IOType* output,
                                         unsigned int local_fft_id) {
-        using output_t = typename FFT::output_type;
+        using input_t = typename FFT::input_type;
 
-        // Inner loop limit is being used for scalar <--> vector type conversion
-        constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
+        constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
+        const unsigned int batch_id = output_batch_id(local_fft_id);
 
-        // Calculate global offset of FFT batch
-        // NOTE: defining 'signal_length_limit' because we are interested in
-        // comparing the *strided* index within the loop
-        const unsigned int batch_offset = batch_offset_strided(local_fft_id);
-        const unsigned int bid = batch_id(local_fft_id);
+        const unsigned int batch_offset = output_batch_offset(local_fft_id);
         const unsigned int stride = Stride * FFT::stride;
+        unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
+
         const unsigned int signal_length_limit = SignalLength * Stride;
-        unsigned int index = batch_offset + threadIdx.x * (inner_loop_limit * Stride);
 
-        // // DEBUGGING: print block/thread indices together with calculated values
-        // printf("(store) blockIdx.x: %d, threadIdx.x: %d, threadIdx.y: %d, local_fft_id: %u, "
-        //        "batch_offset: %u, bid: %u, stride: %u, index: %u, inner_loop_limit: %u\n",
-        //        blockIdx.x, threadIdx.x, threadIdx.y, local_fft_id, batch_offset, bid, stride,
-        //        index, inner_loop_limit);
+        unsigned int write_idx;
 
+        // Loop over all elements doing appropriate memory writes
         for (unsigned int i = 0; i < FFT::output_ept; i++) {
             for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                if (i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit <
-                    signal_length_limit) {
+                // // Check batch ID against Batches to prevent out-of-bounds access
+                // if (batch_id < Batches) {
+                write_idx = i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit;
+                if (write_idx < signal_length_limit) {
                     reinterpret_cast<IOType*>(output)[index + j] =
                         reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
                 }
+                // }
+                index += inner_loop_limit * stride;
             }
-            index += inner_loop_limit * stride;
         }
     }
 };  // struct io_strided_padded
