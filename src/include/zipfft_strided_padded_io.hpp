@@ -86,9 +86,9 @@ struct io_strided_padded : public io<FFT> {
     template <unsigned int Batches = Stride, typename RegisterType, typename IOType>
     static inline __device__ void store(const RegisterType* thread_data, IOType* output,
                                         unsigned int local_fft_id) {
-        using input_t = typename FFT::input_type;
+        using output_t = typename FFT::output_type;
 
-        constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
+        constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
         const unsigned int batch_id = output_batch_id(local_fft_id);
 
         const unsigned int batch_offset = output_batch_offset(local_fft_id);
