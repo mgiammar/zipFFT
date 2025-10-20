@@ -242,6 +242,34 @@ for (unsigned int i = 0; i < FFT::input_ept, i++) {
 }
 ```
 
+#### Additional note on batched FFT execution with striding
+
+In reality, we will be interested in executing multiple FFTs along the dimension concurrently for FFTs of shape `(batch, FFT_size, Stride)`.
+Additional calculations for global memory offsets are needed to account for the positioning along the batch dimension.
+
+```c++
+static inline __device__ unsigned int this_global_fft_id(unsigned int local_fft_id) {
+    return blockIdx.x * apparent_ffts_per_block + local_fft_id;
+}
+
+// Which batch index [0, batch) we are in
+static inline __device__ unsigned int input_outer_batch_index(unsigned int local_fft_id) {
+    return this_global_fft_id(local_fft_id) / Stride;
+}
+
+// Which inner batch index [0, Stride) we are in
+static inline __device__ unsigned int input_inner_batch_index(unsigned int local_fft_id) {
+    return this_global_fft_id(local_fft_id) % Stride;
+}
+
+// Global memory offset for *this* FFT
+static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
+    unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
+    unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
+    return (outer_batch_index * SignalLength * Stride) + inner_batch_index;
+}
+```
+
 ### Strided + Padded FFT
 
 Achieving a fully padded 2D FFT transform along both dimensions requires combining the strided and padded access patterns.
