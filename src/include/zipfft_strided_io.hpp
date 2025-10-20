@@ -75,20 +75,6 @@ struct io_strided : public io<FFT> {
         const unsigned int stride = Stride * FFT::stride;
         unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
 
-        /// DEBUGGING: Print the calculated indices and offsets for the first
-        // thread in each block, including all input-batch-index-derived values
-        unsigned int global_fft_id = this_global_fft_id(local_fft_id);
-        unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
-        unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
-
-        // if (threadIdx.x == 0) {
-        //     printf("(load) blockIdx.x: %u,\t threadIdx.x: %u,\t threadIdx.y: %u,\t local_fft_id: %u,\t "
-        //            "global_fft_id: %u,\t outer_batch_index: %u,\t inner_batch_index: %u,\t batch_id: %u,\t "
-        //            "batch_offset: %u,\t stride: %u,\t starting index: %u\n",
-        //            blockIdx.x, threadIdx.x, threadIdx.y, local_fft_id, global_fft_id,
-        //            outer_batch_index, inner_batch_index, batch_id, batch_offset, stride, index);
-        // }
-
         // Loop over all elements doing appropriate memory reads
         for (unsigned int i = 0; i < FFT::input_ept; i++) {
             for (unsigned int j = 0; j < inner_loop_limit; ++j) {
@@ -116,14 +102,6 @@ struct io_strided : public io<FFT> {
         const unsigned int batch_offset = output_batch_offset(local_fft_id);
         const unsigned int stride = Stride * FFT::stride;
         unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
-
-        // /// DEBUGGING: Print the calculated indices and offsets for the first
-        // // thread in each block
-        // if (threadIdx.x == 0) {
-        //     printf("(store) blockIdx.x: %u, threadIdx.x: %u, threadIdx.y: %u, batch_id: %u, "
-        //            "batch_offset: %u, stride: %u, starting index: %u\n",
-        //            blockIdx.x, threadIdx.x, threadIdx.y, batch_id, batch_offset, stride, index);
-        // }
 
         // Loop over all elements doing appropriate memory writes
         for (unsigned int i = 0; i < FFT::output_ept; i++) {

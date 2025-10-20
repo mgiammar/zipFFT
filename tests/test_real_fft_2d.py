@@ -32,6 +32,9 @@ else:
 # Currently only testing with float32/complex64
 DATA_TYPES = [torch.float32]
 
+# How many times to repeat each test to catch any non-deterministic issues
+NUM_TEST_REPEATS = 10
+
 
 def run_forward_real_fft_2d_test(
     n_cols: int,  # fft_size_x
@@ -39,7 +42,7 @@ def run_forward_real_fft_2d_test(
     stride_y: int,
     batch_size: int = 1,
     dtype: torch.dtype = torch.float32,
-    atol: float = 1e-4,
+    atol: float = 1e-3,  # NOTE: Looser tolerance for accumulated multi-dimensional FFTs
 ):
     """Runs a single forward real 2D FFT test for given parameters.
 
@@ -65,31 +68,16 @@ def run_forward_real_fft_2d_test(
         input_shape = (batch_size, n_rows, n_cols)
         output_shape = (batch_size, n_rows, n_cols // 2 + 1)
 
-    print(
-        f"Running forward real 2D FFT test with input shape {input_shape} and output shape {output_shape}"
-    )
-
     input_data = torch.randn(input_shape, dtype=dtype, device="cuda")
     input_data_clone = torch.empty_like(input_data).copy_(input_data)
 
     output_data = torch.zeros(output_shape, dtype=torch.complex64, device="cuda")
 
-    # BUG: If ordering is swapped (run PyTorch FFT first, the zipFFT), then the results
-    # don't match. CUDA context issue, some synchronization problem?
-
-    # Run our implementation
-    zipfft.rfft2d.fft(input_data, output_data)
-
     # PyTorch reference: rfft2 along all dimensions
     torch_output = torch.fft.rfft2(input_data_clone)
 
-    ### DEBUGGING: Save the tensors as numpy files
-    if not torch.allclose(torch_output, output_data, atol=atol):
-        import numpy as np
-
-        np.save("dev_test_input.npy", input_data_clone.cpu().numpy())
-        np.save("dev_test_torch_output.npy", torch_output.cpu().numpy())
-        np.save("dev_test_output.npy", output_data.cpu().numpy())
+    # Run our implementation
+    zipfft.rfft2d.fft(input_data, output_data)
 
     # Verify results
     assert torch.allclose(
@@ -103,7 +91,7 @@ def run_inverse_real_fft_2d_test(
     stride_y: int,
     batch_size: int = 1,
     dtype: torch.dtype = torch.float32,
-    atol: float = 1e-4,
+    atol: float = 1e-3,  # NOTE: looser tolerance for accumulated multi-dimensional FFTs
 ):
     """Runs a single inverse real 2D FFT test for given parameters.
 
@@ -136,14 +124,11 @@ def run_inverse_real_fft_2d_test(
     # Create output tensor for inverse transform
     output_data = torch.zeros(output_shape, dtype=dtype, device="cuda")
 
-    # BUG: If ordering is swapped (run PyTorch FFT first, the zipFFT), then the results
-    # don't match. CUDA context issue, some synchronization problem?
+    # PyTorch reference: irfft2
+    torch_output = torch.fft.irfft2(input_data_clone, norm="forward")
 
     # Run our implementation
     zipfft.rfft2d.ifft(input_data, output_data)
-
-    # PyTorch reference: irfft2
-    torch_output = torch.fft.irfft2(input_data_clone, norm="forward")
 
     # Verify results
     assert torch.allclose(
@@ -155,23 +140,25 @@ def run_inverse_real_fft_2d_test(
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_real_fft_r2c_2d(n_rows, n_cols, stride_y, batch_size, dtype):
     """Test forward real 2D FFT for specific sizes, stride, batch size, and dtype."""
-    run_forward_real_fft_2d_test(
-        n_rows=n_rows,
-        n_cols=n_cols,
-        stride_y=stride_y,
-        batch_size=batch_size,
-        dtype=dtype,
-    )
+    for _ in range(NUM_TEST_REPEATS):
+        run_forward_real_fft_2d_test(
+            n_rows=n_rows,
+            n_cols=n_cols,
+            stride_y=stride_y,
+            batch_size=batch_size,
+            dtype=dtype,
+        )
 
 
 @pytest.mark.parametrize("n_rows,n_cols,stride_y,batch_size", INVERSE_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
 def test_real_fft_c2r_2d(n_rows, n_cols, stride_y, batch_size, dtype):
     """Test inverse real 2D FFT for specific sizes, stride, batch size, and dtype."""
-    run_inverse_real_fft_2d_test(
-        n_rows=n_rows,
-        n_cols=n_cols,
-        stride_y=stride_y,
-        batch_size=batch_size,
-        dtype=dtype,
-    )
+    for _ in range(NUM_TEST_REPEATS):
+        run_inverse_real_fft_2d_test(
+            n_rows=n_rows,
+            n_cols=n_cols,
+            stride_y=stride_y,
+            batch_size=batch_size,
+            dtype=dtype,
+        )

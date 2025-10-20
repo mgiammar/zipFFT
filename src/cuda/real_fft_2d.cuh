@@ -117,16 +117,15 @@ inline void block_real_fft_2d_launcher(Input_T* input_data, Output_T* output_dat
         // Launch transform along X dimension
         const unsigned int grid_size_x =
             ((batch_size * FFTSizeY) + FFTX::ffts_per_block - 1) / FFTX::ffts_per_block;
-
-        // // DEBUGGING: print the grid size
-        // printf("Grid size X: %u, FFTSizeX: %u, FFTSizeY: %u\n", grid_size_x, FFTSizeX, FFTSizeY);
         kernel_ptr_x<<<grid_size_x, FFTX::block_dim, FFTX::shared_memory_size>>>(input_data_t,
                                                                                  output_data_t);
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 
         // Launch transform along Y dimension
+        // NOTE: Using StrideY instead of FFTSizeX since it accounts for the
+        // (n/2 + 1) size of the complex data in memory
         const unsigned int grid_size_y =
-            ((batch_size * FFTSizeX) + FFTY::ffts_per_block - 1) / FFTY::ffts_per_block;
+            ((batch_size * StrideY) + FFTY::ffts_per_block - 1) / FFTY::ffts_per_block;
         kernel_ptr_y<<<grid_size_y, FFTY::block_dim, FFTY::shared_memory_size>>>(output_data_t);
 
         CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
