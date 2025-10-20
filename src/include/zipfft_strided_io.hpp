@@ -14,24 +14,47 @@ template <class FFT, unsigned int Stride>
 struct io_strided : public io<FFT> {
     using io<FFT>::apparent_ffts_per_block;
 
-    // Starting array offset for this batch within global memory
+    static inline __device__ unsigned int this_global_fft_id(unsigned int local_fft_id) {
+        return blockIdx.x * apparent_ffts_per_block + local_fft_id;
+    }
+
+    // For an input of (outer_batch, FFT::input_length, Stride), determine
+    // which index [0, outer_batch-1] we are in. Used to adjust the starting
+    // read index of the load method(s).
+    // NOTE: Assumes kernel grid launch dimensions are set to encompass outer_batch.
+    static inline __device__ unsigned int input_outer_batch_index(unsigned int local_fft_id) {
+        return this_global_fft_id(local_fft_id) / Stride;
+    }
+
+    static inline __device__ unsigned int output_outer_batch_index(unsigned int local_fft_id) {
+        return this_global_fft_id(local_fft_id) / Stride;
+    }
+
+    // For an input of (outer_batch, FFT::input_length, Stride), determine
+    // which index [0, Stride-1] we are in *within* an assumed 2D array. This
+    // is effectively the column index within the 2D array.
+    static inline __device__ unsigned int input_inner_batch_index(unsigned int local_fft_id) {
+        return this_global_fft_id(local_fft_id) % Stride;
+    }
+
+    static inline __device__ unsigned int output_inner_batch_index(unsigned int local_fft_id) {
+        return this_global_fft_id(local_fft_id) % Stride;
+    }
+
+    // For an input of (outer_batch, FFT::input_length, Stride), determine
+    // the starting read index within global memory in the range of
+    // [0, outer_batch * FFT::input_length * Stride). Is effectively the
+    // starting index of the column within the 2D array.
     static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
-        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
-        return global_fft_id;  // corresponds to column in 2D array
+        unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
+        unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
+        return (outer_batch_index * FFT::input_length * Stride) + inner_batch_index;
     }
 
-    // Starting array offset for this batch within global memory
     static inline __device__ unsigned int output_batch_offset(unsigned int local_fft_id) {
-        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
-        return global_fft_id;  // corresponds to column in 2D array
-    }
-
-    static inline __device__ unsigned int input_batch_id(unsigned int local_fft_id) {
-        return input_batch_offset(local_fft_id);
-    }
-
-    static inline __device__ unsigned int output_batch_id(unsigned int local_fft_id) {
-        return output_batch_offset(local_fft_id);
+        unsigned int outer_batch_index = output_outer_batch_index(local_fft_id);
+        unsigned int inner_batch_index = output_inner_batch_index(local_fft_id);
+        return (outer_batch_index * FFT::output_length * Stride) + inner_batch_index;
     }
 
     // Load for multi-dimensional FFTs across non-contigious (not
@@ -46,11 +69,25 @@ struct io_strided : public io<FFT> {
         using input_t = typename FFT::input_type;
 
         constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
-        const unsigned int batch_id = input_batch_id(local_fft_id);
+        const unsigned int batch_id = input_inner_batch_index(local_fft_id);
 
         const unsigned int batch_offset = input_batch_offset(local_fft_id);
         const unsigned int stride = Stride * FFT::stride;
         unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
+
+        /// DEBUGGING: Print the calculated indices and offsets for the first
+        // thread in each block, including all input-batch-index-derived values
+        unsigned int global_fft_id = this_global_fft_id(local_fft_id);
+        unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
+        unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
+
+        // if (threadIdx.x == 0) {
+        //     printf("(load) blockIdx.x: %u,\t threadIdx.x: %u,\t threadIdx.y: %u,\t local_fft_id: %u,\t "
+        //            "global_fft_id: %u,\t outer_batch_index: %u,\t inner_batch_index: %u,\t batch_id: %u,\t "
+        //            "batch_offset: %u,\t stride: %u,\t starting index: %u\n",
+        //            blockIdx.x, threadIdx.x, threadIdx.y, local_fft_id, global_fft_id,
+        //            outer_batch_index, inner_batch_index, batch_id, batch_offset, stride, index);
+        // }
 
         // Loop over all elements doing appropriate memory reads
         for (unsigned int i = 0; i < FFT::input_ept; i++) {
@@ -74,11 +111,19 @@ struct io_strided : public io<FFT> {
         using output_t = typename FFT::output_type;
 
         constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
-        const unsigned int batch_id = output_batch_id(local_fft_id);
+        const unsigned int batch_id = output_inner_batch_index(local_fft_id);
 
         const unsigned int batch_offset = output_batch_offset(local_fft_id);
         const unsigned int stride = Stride * FFT::stride;
         unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
+
+        // /// DEBUGGING: Print the calculated indices and offsets for the first
+        // // thread in each block
+        // if (threadIdx.x == 0) {
+        //     printf("(store) blockIdx.x: %u, threadIdx.x: %u, threadIdx.y: %u, batch_id: %u, "
+        //            "batch_offset: %u, stride: %u, starting index: %u\n",
+        //            blockIdx.x, threadIdx.x, threadIdx.y, batch_id, batch_offset, stride, index);
+        // }
 
         // Loop over all elements doing appropriate memory writes
         for (unsigned int i = 0; i < FFT::output_ept; i++) {

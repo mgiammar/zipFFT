@@ -37,6 +37,11 @@ try:
 except ImportError:
     strided_padded_cfft1d = None
 
+try:
+    from . import rfft2d
+except ImportError:
+    rfft2d = None
+
 # Load build config if available
 try:
     from .build_config import CUDA_ARCHITECTURES, ENABLED_EXTENSIONS
@@ -68,4 +73,7 @@ __all__ = [
     "rfft1d",
     "padded_rfft1d",
     "strided_cfft1d",
+    "padded_cfft1d",
+    "strided_padded_cfft1d",
+    "rfft2d",
 ]
