@@ -42,9 +42,9 @@ struct io_strided : public io<FFT> {
     }
 
     // For an input of (outer_batch, FFT::input_length, Stride), determine
-    // the starting read index within global memory in the range of
-    // [0, outer_batch * FFT::input_length * Stride). Is effectively the
-    // starting index of the column within the 2D array.
+    // the starting read index within global memory (for a particular block) 
+    // in the range of [0, outer_batch * FFT::input_length * Stride). Is
+    // effectively the starting index of the column within the 2D array.
     static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
         unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
         unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
