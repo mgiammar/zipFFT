@@ -86,18 +86,18 @@ struct io_strided_padded : public io<FFT> {
         // Loop over all elements doing appropriate memory reads
         for (unsigned int i = 0; i < FFT::input_ept; i++) {
             for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                // // Check batch ID against Batches to prevent out-of-bounds access
-                // if (batch_id < Batches) {
-                read_idx = (i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit);
-                if (read_idx < signal_length_limit) {
-                    reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-                        reinterpret_cast<const IOType*>(input)[index + j];
-                } else {
-                    reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-                        get_zero<IOType>();
+                // Check batch ID against Batches to prevent out-of-bounds access
+                if (batch_id < Batches) {
+                    read_idx = (i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit);
+                    if (read_idx < signal_length_limit) {
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
+                            reinterpret_cast<const IOType*>(input)[index + j];
+                    } else {
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
+                            get_zero<IOType>();
+                    }
+                    index += inner_loop_limit * stride;
                 }
-                index += inner_loop_limit * stride;
-                // }
             }
         }
     }
@@ -125,14 +125,14 @@ struct io_strided_padded : public io<FFT> {
         // Loop over all elements doing appropriate memory writes
         for (unsigned int i = 0; i < FFT::output_ept; i++) {
             for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                // // Check batch ID against Batches to prevent out-of-bounds access
-                // if (batch_id < Batches) {
-                write_idx = i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit;
-                if (write_idx < signal_length_limit) {
-                    reinterpret_cast<IOType*>(output)[index + j] =
-                        reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
+                // Check batch ID against Batches to prevent out-of-bounds access
+                if (batch_id < Batches) {
+                    write_idx = i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit;
+                    if (write_idx < signal_length_limit) {
+                        reinterpret_cast<IOType*>(output)[index + j] =
+                            reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
+                    }
                 }
-                // }
                 index += inner_loop_limit * stride;
             }
         }

@@ -60,7 +60,7 @@ cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 enabled_exts_str = (
     parsed_args.enable_extensions
     or os.environ.get("ENABLED_EXTENSIONS")
-    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,strided_padded_cfft1d,rfft2d"
+    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,strided_padded_cfft1d,rfft2d,padded_rfft2d"
 )
 enabled_extensions = [ext.strip() for ext in enabled_exts_str.split(",")]
 
@@ -185,6 +185,15 @@ if "rfft2d" in enabled_extensions:
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(real_fft_2d_extension)
+
+if "padded_rfft2d" in enabled_extensions:
+    padded_real_fft_2d_extension = CUDAExtension(
+        name="zipfft.padded_rfft2d",
+        sources=["src/cuda/padded_real_fft_2d_binding.cu"],
+        include_dirs=[pybind11.get_include()],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(padded_real_fft_2d_extension)
 
 # Write build configuration to a file for testing
 build_config = {
