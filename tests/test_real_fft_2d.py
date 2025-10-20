@@ -59,7 +59,7 @@ def run_forward_real_fft_2d_test(
     dtype : torch.dtype, optional
         The data type of the input tensor, by default torch.float32.
     atol : float, optional
-        Absolute tolerance for comparison, by default 1e-4.
+        Absolute tolerance for comparison, by default 1e-3.
     """
     # Create input tensor with appropriate shape
     input_shape = (n_rows, n_cols)
@@ -108,7 +108,7 @@ def run_inverse_real_fft_2d_test(
     dtype : torch.dtype, optional
         The data type of the input tensor, by default torch.float32.
     atol : float, optional
-        Absolute tolerance for comparison, by default 1e-4.
+        Absolute tolerance for comparison, by default 1e-3.
     """
     # Initial input data here is complex data with shape (n_rows, n_cols // 2 + 1)
     input_shape = (n_rows, n_cols // 2 + 1)
