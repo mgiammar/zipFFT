@@ -28,9 +28,14 @@ struct FFTParams {
     unsigned int inner_batch_count;
     unsigned int outer_batch_count;
     bool kernel_transpose;
+    bool read_kernel_transposed;
+    bool smem_transpose;
+
+    bool get_size;
+    unsigned int kernel_size;
 };
 
-template <class FFT, class FFT_inv>
+template <class FFT, class FFT_inv, bool smem_transpose, bool read_kernel_transposed>
 __launch_bounds__(FFT::max_threads_per_block) __global__
     void conv_strided_kernel(
         float2* data,
@@ -44,53 +49,25 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     float2 thread_data[FFT::storage_size];
     
-    load_strided_smem<FFT>(data, thread_data, shared_mem, inner_batch_count * FFT::ffts_per_block);
+    load_strided<FFT, smem_transpose>(data, thread_data, shared_mem, inner_batch_count * FFT::ffts_per_block);
 
     FFT().execute(thread_data, shared_mem, workspace);
 
-    const size_t kernel_stride       = blockDim.x * blockDim.y * gridDim.x * gridDim.y;
-    size_t       kernel_index        = threadIdx.x + blockDim.x * threadIdx.y;
-    kernel_index += (blockIdx.x + gridDim.x * blockIdx.y) * blockDim.x * blockDim.y;
-
-    // complex multiplication in the frequency domain
-    for (unsigned int i = 0; i < FFT::elements_per_thread; ++i) {
-        float2 kernel_thread_data = kernel[kernel_index];
-        kernel_index += kernel_stride;
-
-        float2 a;
-        a.x = thread_data[i].x;
-        a.y = thread_data[i].y;
-
-        float2 b;
-        b.x = kernel_thread_data.x;
-        b.y = kernel_thread_data.y;
-        
-        float2 c;
-        c.x = a.x * b.x - a.y * b.y;
-        c.y = a.x * b.y + a.y * b.x;
-
-        thread_data[i].x = c.x;
-        thread_data[i].y = c.y;
-    }
+    apply_kernel<FFT, smem_transpose, read_kernel_transposed>(kernel, thread_data, shared_mem, inner_batch_count);    
 
     FFT_inv().execute(thread_data, shared_mem, inverse_workspace);
 
-    store_strided_smem<FFT>(thread_data, shared_mem, data, inner_batch_count * FFT::ffts_per_block);
+    store_strided<FFT, smem_transpose>(thread_data, shared_mem, data, inner_batch_count * FFT::ffts_per_block);
 }
 
 template <class FFT>
 void do_kernel_transpose(struct FFTParams* fft_params, cudaStream_t strm) {
     using namespace cufftdx;
 
-    // Increase shared memory size, if needed
-    CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        kernel_transpose_kernel<FFT>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
-
     dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
 
     kernel_transpose_kernel<FFT>
-        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+        <<<grid_dims, FFT::block_dim, 0, strm>>>(
             fft_params->data,
             fft_params->kernel,
             fft_params->inner_batch_count
@@ -98,7 +75,7 @@ void do_kernel_transpose(struct FFTParams* fft_params, cudaStream_t strm) {
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 }
 
-template <class FFT, class FFT_inv>
+template <class FFT, class FFT_inv, bool smem_transpose, bool read_kernel_transposed>
 void do_convolution(struct FFTParams* fft_params, cudaStream_t strm) {
     using namespace cufftdx;
 
@@ -108,15 +85,20 @@ void do_convolution(struct FFTParams* fft_params, cudaStream_t strm) {
     auto workspace_inverse = make_workspace<FFT_inv>(error_code, strm);
     CUDA_CHECK_AND_EXIT(error_code);
 
+    unsigned int needed_shared_mem_size = cufftdx::size_of<FFT>::value * FFT::ffts_per_block * sizeof(float2);
+    unsigned int my_shared_mem_size = (smem_transpose && needed_shared_mem_size >= FFT::shared_memory_size)
+                                            ? needed_shared_mem_size : FFT::shared_memory_size;
+    
+
     // Increase shared memory size, if needed
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        conv_strided_kernel<FFT, FFT_inv>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+        conv_strided_kernel<FFT, FFT_inv, smem_transpose, read_kernel_transposed>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, my_shared_mem_size));
 
     dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
 
-    conv_strided_kernel<FFT, FFT_inv>
-        <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
+    conv_strided_kernel<FFT, FFT_inv, smem_transpose, read_kernel_transposed>
+        <<<grid_dims, FFT::block_dim, my_shared_mem_size, strm>>>(
             fft_params->data,
             fft_params->kernel,
             fft_params->inner_batch_count,
@@ -138,17 +120,41 @@ void dispatch_function(void* params, cudaStream_t strm) {
 
     using FFT = decltype(FFT_Base() + Direction<fft_direction::forward>());
     using FFT_inv = decltype(FFT_Base() + Direction<fft_direction::inverse>());
+
+    if(fft_params->get_size) {
+        fft_params->kernel_size = FFT::block_dim.x * FFT::block_dim.y * FFT::block_dim.z *
+            fft_params->outer_batch_count * fft_params->inner_batch_count * FFT::elements_per_thread;
+        return;
+    }
     
     if(fft_params->kernel_transpose) {
         do_kernel_transpose<FFT>(fft_params, strm);
         return;
     }
-
-    do_convolution<FFT, FFT_inv>(fft_params, strm);
+    
+    if(fft_params->read_kernel_transposed) {
+        if(fft_params->smem_transpose) {
+            do_convolution<FFT, FFT_inv, true, true>(fft_params, strm);
+        } else {
+            do_convolution<FFT, FFT_inv, false, true>(fft_params, strm);
+        }
+    } else {
+        if(fft_params->smem_transpose) {
+            do_convolution<FFT, FFT_inv, true, false>(fft_params, strm);
+        } else {
+            do_convolution<FFT, FFT_inv, false, false>(fft_params, strm);
+        }
+    }
+    
 }
 
 // Common implementation function
-void conv_strided_impl(torch::Tensor input, torch::Tensor kernel, bool kernel_transpose) {
+unsigned int conv_strided_impl(torch::Tensor input,
+                        torch::Tensor kernel,
+                        bool kernel_transpose,
+                        bool read_kernel_transposed,
+                        bool smem_transpose,
+                        bool get_size) {
     TORCH_CHECK(input.device().is_cuda(),
                 "Input tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -161,7 +167,7 @@ void conv_strided_impl(torch::Tensor input, torch::Tensor kernel, bool kernel_tr
     unsigned int fft_size, batch_size, outer_batch_count, inner_batch_count;
 
     c10::cuda::CUDAGuard guard(input.device()); 
-    c10::cuda::CUDAGuard guard_kernel(kernel.device());
+    //c10::cuda::CUDAGuard guard_kernel(kernel.device());
 
     // Doing dimension checks for fft size and batch dimension
     if (input.dim() == 2) {
@@ -197,21 +203,33 @@ void conv_strided_impl(torch::Tensor input, torch::Tensor kernel, bool kernel_tr
     fft_params.kernel = kernel_ptr;
     fft_params.inner_batch_count = inner_batch_count;
     fft_params.outer_batch_count = outer_batch_count;
+    fft_params.smem_transpose = smem_transpose;
+    fft_params.kernel_transpose = kernel_transpose;
+    fft_params.read_kernel_transposed = read_kernel_transposed;
+    fft_params.get_size = get_size;
+    fft_params.kernel_size = 0;
 
     fft_func(&fft_params);
+
+    return fft_params.kernel_size;
 }
 
-void conv_strided_func(torch::Tensor input, torch::Tensor kernel) {
-    conv_strided_impl(input, kernel, false);  // Normal convolution
+void conv_strided_func(torch::Tensor input, torch::Tensor kernel, bool read_kernel_transposed, bool smem_transpose) {
+    conv_strided_impl(input, kernel, false, read_kernel_transposed, smem_transpose, false);
 }
 
 void kernel_transpose_impl(torch::Tensor input, torch::Tensor kernel) {
-    conv_strided_impl(input, kernel, true);  // Kernel transpose operation
+    conv_strided_impl(input, kernel, true, false, false, false);
+}
+
+unsigned int kernel_size_impl(torch::Tensor input) {
+    return conv_strided_impl(input, input, false, false, false, true);
 }
 
 PYBIND11_MODULE(conv_strided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT convolution using cuFFTDx";
     m.def("conv", &conv_strided_func, "In-place 1D C2C FFT using cuFFTDx.");
     m.def("kernel_transpose", &kernel_transpose_impl, "In-place kernel transpose using cuFFTDx.");
+    m.def("kernel_size", &kernel_size_impl, "Get required kernel size for given input tensor.");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

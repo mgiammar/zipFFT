@@ -24,7 +24,7 @@ ALL_CONFIGS = fft_strided.get_supported_sizes()
 BATCH_SCALE_FACTOR = [1, 2, 3, 4, 5, 6]
 OUTER_BATCH_SCALE = [1, 2, 3, 4, 5, 6]
 DATA_TYPES = [torch.complex64]
-SMEM_TRANSPOSE_OPTIONS = [True]
+SMEM_TRANSPOSE_OPTIONS = [True, False]
 
 def run_forward_fft_test(fft_shape: int, dtype: torch.dtype, smem_transpose: bool):
     """Runs a single forward FFT test for a given size and dtype.

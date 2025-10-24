@@ -37,20 +37,11 @@ __global__ void fft_strided_kernel(float2* data, unsigned int inner_batch_count,
     extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
     unsigned int stride_len = inner_batch_count * FFT::ffts_per_block;
     
-    if constexpr (smem_traspose) {
-        load_strided_smem<FFT>(data, thread_data, shared_mem, stride_len);
-    } else {
-        load_strided<FFT>(data, thread_data, stride_len);
-    }
-    
+    load_strided<FFT, smem_traspose>(data, thread_data, shared_mem, stride_len);
 
     FFT().execute(thread_data, shared_mem, workspace);
 
-    if constexpr (smem_traspose) {
-        store_strided_smem<FFT>(thread_data, shared_mem, data, stride_len);
-    } else {
-        store_strided<FFT>(thread_data, data, stride_len);
-    }
+    store_strided<FFT, smem_traspose>(thread_data, shared_mem, data, stride_len);
 }
 
 template<unsigned int FFTSize, unsigned int BatchSize, unsigned int Arch, bool inverse, bool smem_traspose>
