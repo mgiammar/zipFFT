@@ -34,8 +34,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
         float2* data,
         float scale,
         typename FFT::workspace_type workspace,
-        typename FFT::workspace_type inverse_workspace,
-        bool disable_compute) {
+        typename FFT::workspace_type inverse_workspace) {
 
     extern __shared__ __align__(alignof(float4)) float2 shared_mem[];
     
@@ -44,10 +43,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     const unsigned int local_fft_id = threadIdx.y;
     load_nonstrided<FFT>(data, thread_data, local_fft_id);
 
-    if (!disable_compute)
-        FFT().execute(thread_data, shared_mem, workspace);
-
-    __syncthreads();
+    FFT().execute(thread_data, shared_mem, workspace);
 
     // complex multiplication in the frequency domain
     for (unsigned int i = 0; i < FFT::elements_per_thread; ++i) {
@@ -55,8 +51,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
         thread_data[i].y *= scale;
     }
 
-    if (!disable_compute)
-        FFT_inv().execute(thread_data, shared_mem, inverse_workspace);
+    FFT_inv().execute(thread_data, shared_mem, inverse_workspace);
 
     store_nonstrided<FFT>(thread_data, data, local_fft_id);
 }
@@ -69,7 +64,6 @@ void dispatch_function(void* params, cudaStream_t strm) {
 
     using FFT_Base = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
                                  Precision<float>() +
-                                 ElementsPerThread<8u>() +
                                  FFTsPerBlock<BatchSize>() + SM<Arch>());
 
     using FFT = decltype(FFT_Base() + Direction<fft_direction::forward>());
@@ -93,8 +87,7 @@ void dispatch_function(void* params, cudaStream_t strm) {
             fft_params->data,
             fft_params->scale,
             workspace,
-            workspace_inverse,
-            get_disable_compute()
+            workspace_inverse
         );
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 }
@@ -106,23 +99,16 @@ void conv_strided_impl(torch::Tensor input, float scale) {
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
                 "Input tensor must be of type torch.complex64");
 
-    unsigned int fft_size, batch_size, outer_batch_count, inner_batch_count;
+    TORCH_CHECK(input.dim() == 3, 
+                "Input tensor must be 3D (batch_size_0, batch_size_1, fft_size). Got ",
+                input.dim(), "D.");
 
     c10::cuda::CUDAGuard guard(input.device());
 
-    if (input.dim() == 1) {
-        fft_size = input.size(0);
-        batch_size = 1;
-        outer_batch_count = 1;
-    } else if (input.dim() == 2) {
-        fft_size = input.size(1);
-        auto batch_size_pair = get_supported_batches_runtime(fft_size, input.size(0), 0);
-        outer_batch_count = batch_size_pair.first;
-        batch_size = batch_size_pair.second;
-    } else {
-        TORCH_CHECK(false, "Input tensor must be 1D or 2D. Got ", input.dim(),
-                    "D.");
-    }
+    unsigned int fft_size = input.size(2);
+    auto batch_size_pair = get_supported_batches_runtime(fft_size, input.size(0) * input.size(1), 0);
+    unsigned int outer_batch_count = batch_size_pair.first;
+    unsigned int batch_size = batch_size_pair.second;
 
     float2* data_ptr =
         reinterpret_cast<float2*>(input.data_ptr<c10::complex<float>>());
@@ -143,6 +129,5 @@ void conv_strided_impl(torch::Tensor input, float scale) {
 PYBIND11_MODULE(conv_nonstrided, m) {  // First arg needs to match name in setup.py
     m.doc() = "Complex-to-complex 1D FFT convolution using cuFFTDx";
     m.def("conv", &conv_strided_impl, "In-place 1D C2C FFT using cuFFTDx.");
-    m.def("set_disable_compute", &set_disable_compute_impl, "Enable/disable the use of custom FFT computations");
     m.def("get_supported_sizes", &get_supported_sizes, "Get list of supported FFT sizes");
 }

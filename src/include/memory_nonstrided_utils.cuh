@@ -7,8 +7,7 @@ template<class FFT>
 static inline __device__
 void load_nonstrided(const float2* input, float2* thread_data, unsigned int  local_fft_id) {
 
-    unsigned int global_fft_id =
-    blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
+    unsigned int global_fft_id = blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
     const unsigned int offset = FFT::input_length * global_fft_id;
     const unsigned int stride = FFT::stride;
     unsigned int       index  = offset + threadIdx.x;
@@ -41,14 +40,14 @@ void store_nonstrided(const float2* thread_data, float2* output, unsigned int lo
     }
 }
 
-template<class FFT>
+template<class FFT, int padding_ratio>
 static inline __device__
 void load_padded_layered(const float2* input,
             float2* thread_data,
-            unsigned int  local_fft_id,
-            unsigned int signal_length,
-            unsigned int active_layers,
-            unsigned int extra_layers) {
+            unsigned int  local_fft_id) {
+
+    unsigned int active_layers = FFT::input_length / padding_ratio;
+    unsigned int extra_layers = FFT::input_length - active_layers;
 
     unsigned int global_fft_id = blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
     global_fft_id = global_fft_id + extra_layers * (global_fft_id / active_layers); // skip extra layers
@@ -59,7 +58,7 @@ void load_padded_layered(const float2* input,
     for (unsigned int i = 0; i < FFT::input_ept; ++i) {
         unsigned int fft_index = i * stride + threadIdx.x;
 
-        if (fft_index < signal_length) {
+        if (fft_index < FFT::input_length / padding_ratio) {
             thread_data[i] = input[index];
             index += stride;
         } else if (fft_index < FFT::input_length) {
@@ -69,13 +68,14 @@ void load_padded_layered(const float2* input,
     }
 }
 
-template<class FFT>
+template<class FFT, int padding_ratio>
 static inline __device__
 void store_layered(const float2* thread_data,
             float2*             output,
-            unsigned int        local_fft_id,
-            unsigned int       active_layers,
-            unsigned int       extra_layers) {
+            unsigned int        local_fft_id) {
+
+    unsigned int active_layers = FFT::output_length / padding_ratio;
+    unsigned int extra_layers = FFT::output_length - active_layers;
     
     unsigned int global_fft_id = blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
     global_fft_id = global_fft_id + extra_layers * (global_fft_id / active_layers); // skip extra layers

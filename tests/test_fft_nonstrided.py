@@ -43,11 +43,14 @@ def run_forward_fft_test(fft_shape: int, dtype: torch.dtype, direction: bool):
     if direction:
         torch.fft.ifft(x0, out=x0)
         x0 *= float(fft_shape[-1])
+
+        fft_nonstrided.ifft(x1)
     else:
         torch.fft.fft(x0, out=x0)
+        fft_nonstrided.fft(x1)
 
     # NOTE: This zipFFT function is in-place
-    fft_nonstrided.fft(x1, direction)
+   # fft_nonstrided.fft(x1, direction)
 
     # convert torch tensors to numpy arrays
 
@@ -66,6 +69,6 @@ def run_forward_fft_test(fft_shape: int, dtype: torch.dtype, direction: bool):
 @pytest.mark.parametrize("direction", [False, True])
 def test_fft_c2c_1d(fft_size, dtype, batch_scale, direction):
     """Test forward FFT for specific size, batch size, and dtype."""
-    shape = (batch_scale, fft_size)
+    shape = (batch_scale, batch_scale, fft_size)
     run_forward_fft_test(fft_shape=shape, dtype=dtype, direction=direction)
 

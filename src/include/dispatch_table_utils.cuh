@@ -137,12 +137,12 @@ int select_arch_and_dispatch(void* params) {
     cudaStream_t strm = at::cuda::getCurrentCUDAStream().stream();
 
     switch (arch) {
-        case 800: dispatch_function<FFTSize, BatchSize, 800>(params, strm); break;
+        //case 800: dispatch_function<FFTSize, BatchSize, 800>(params, strm); break;
         case 860: dispatch_function<FFTSize, BatchSize, 860>(params, strm); break;
-        case 870: dispatch_function<FFTSize, BatchSize, 870>(params, strm); break;
-        case 890: dispatch_function<FFTSize, BatchSize, 890>(params, strm); break;
-        case 900: dispatch_function<FFTSize, BatchSize, 900>(params, strm); break;
-        case 1200: dispatch_function<FFTSize, BatchSize, 1200>(params, strm); break;
+        //case 870: dispatch_function<FFTSize, BatchSize, 870>(params, strm); break;
+        //case 890: dispatch_function<FFTSize, BatchSize, 890>(params, strm); break;
+        //case 900: dispatch_function<FFTSize, BatchSize, 900>(params, strm); break;
+        //case 1200: dispatch_function<FFTSize, BatchSize, 1200>(params, strm); break;
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
                       << ". Supported architectures are 800, 860, 870, 890, "
@@ -189,13 +189,6 @@ std::vector<int> get_supported_sizes() {
     return sizes;
 }
 
-bool __disable_compute = false;
-
-void set_disable_compute_impl(bool disable) {
-    __disable_compute = disable;
+constexpr int get_padding_ratio() {
+    return 8;
 }
-
-bool get_disable_compute() {
-    return __disable_compute;
-}
-
