@@ -115,6 +115,7 @@ void dispatch_function(void* params, cudaStream_t strm) {
     using namespace cufftdx;
 
     using FFT_Base = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
+                                 ElementsPerThread<8u>() +
                                  Precision<float>() +
                                  FFTsPerBlock<BatchSize>() + SM<Arch>());
 

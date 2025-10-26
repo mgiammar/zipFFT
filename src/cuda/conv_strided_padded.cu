@@ -73,39 +73,6 @@ void do_kernel_transpose(struct FFTParams* fft_params, cudaStream_t strm) {
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
 }
 
-// template <
-// unsigned int FFTSize,
-// unsigned int BatchSize,
-// unsigned int Arch>
-// void do_padded_conv(struct FFTParams* fft_params, cudaStream_t strm) {
-//     using namespace cufftdx;
-
-
-//     using FFT_Base = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
-//                                  Precision<float>() +
-//                                  FFTsPerBlock<BatchSize>() + SM<Arch>());
-
-//     using FFT = decltype(FFT_Base() + Direction<fft_direction::forward>());
-//     using FFT_inv = decltype(FFT_Base() + Direction<fft_direction::inverse>());
-
-//     constexpr int padding_ratio = get_padding_ratio();
-
-//     // Increase shared memory size, if needed
-//     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-//         conv_strided_padded_kernel<FFT, FFT_inv, padding_ratio>,
-//         cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
-
-//     dim3 grid_dims(fft_params->outer_batch_count, fft_params->inner_batch_count);
-
-//     conv_strided_padded_kernel<FFT, FFT_inv, padding_ratio>
-//         <<<grid_dims, FFT::block_dim, FFT::shared_memory_size, strm>>>(
-//             fft_params->data,
-//             fft_params->kernel,
-//             fft_params->inner_batch_count
-//         );
-//     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
-// }
-
 template <class FFT, class FFT_inv, bool smem_transpose, bool read_kernel_transposed>
 void do_convolution(struct FFTParams* fft_params, cudaStream_t strm) {
     using namespace cufftdx;
@@ -149,6 +116,7 @@ void dispatch_function(void* params, cudaStream_t strm) {
 
      using FFT_Base = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
                                   Precision<float>() +
+                                  ElementsPerThread<8u>() +
                                   FFTsPerBlock<BatchSize>() + SM<Arch>());
 
      using FFT = decltype(FFT_Base() + Direction<fft_direction::forward>());
