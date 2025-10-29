@@ -10,11 +10,11 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     void block_fft_c2c_1d_kernel_with_layout(typename FFT::value_type* data) {
     using complex_type = typename FFT::value_type;
     using io_type = zipfft::io_with_layout<FFT, InputLayout, OutputLayout>;
-    
+
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    
+
     // Load using custom layout
     io_type::load(data, thread_data, local_fft_id);
 
@@ -45,41 +45,39 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 }
 
 // --- Launcher Definition ---
-template <unsigned int Arch, typename T, unsigned int FFTSize,
-          bool IsForwardFFT, unsigned int elements_per_thread,
-          unsigned int FFTs_per_block>
+template <unsigned int Arch, typename T, unsigned int FFTSize, bool IsForwardFFT,
+          unsigned int elements_per_thread, unsigned int FFTs_per_block>
 inline void block_fft_c2c_1d_launcher(T* data) {
     using namespace cufftdx;
 
     // Since complex input to FFT, convert vector into its scalar type
     using scalar_precision_type = zipfft::get_scalar_component_t<T>;
-    constexpr auto fft_direction =
-        IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
+    constexpr auto fft_direction = IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
 
-    using FFT = decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() +
-                         Direction<fft_direction>() +
-                         Precision<scalar_precision_type>() +
-                         ElementsPerThread<elements_per_thread>() +
-                         FFTsPerBlock<FFTs_per_block>() + SM<Arch>());
+    using FFT =
+        decltype(Block() + Size<FFTSize>() + Type<fft_type::c2c>() + Direction<fft_direction>() +
+                 Precision<scalar_precision_type>() + ElementsPerThread<elements_per_thread>() +
+                 FFTsPerBlock<FFTs_per_block>() + SM<Arch>());
 
     // Define explicit index mappers for contiguous memory layout
     // Input layout: (element_index, batch_index)
     using InputLayout = zipfft::index_mapper<
-        zipfft::int_pair<FFT::input_length, 1>,  // elements contiguous (stride 1)
-        zipfft::int_pair<1, FFT::input_length>    // batches strided by input_length
-    >;
-    
+        zipfft::int_pair<FFT::input_length, 1>,  // elements contiguous (columns)
+        zipfft::int_pair<1, FFT::input_length>,  // batches strided by input_length (rows)
+        zipfft::int_pair<0, 0>                   // dummy batch dimension for compatibility
+        >;
+
     // Output layout: same as input for in-place C2C
     using OutputLayout = zipfft::index_mapper<
-        zipfft::int_pair<FFT::output_length, 1>,
-        zipfft::int_pair<1, FFT::output_length>
-    >;
+        zipfft::int_pair<FFT::output_length, 1>,  // elements contiguous (stride 1)
+        zipfft::int_pair<1, FFT::output_length>,  // batches strided by output_length (rows)
+        zipfft::int_pair<0, 0>                    // dummy batch dimension for compatibility
+        >;
 
     // Increase shared memory size, if needed
     auto kernel_ptr = block_fft_c2c_1d_kernel_with_layout<FFT, InputLayout, OutputLayout>;
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        kernel_ptr,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+        kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
     // Cast to cuFFTDx complex type from the FFT struct
     using complex_type = typename FFT::value_type;
@@ -106,8 +104,8 @@ inline void block_fft_c2c_1d_launcher(T* data) {
  *
  * @return int Returns 0 on success, or error code on failure.
  */
-template <typename T, unsigned int FFTSize, bool IsForwardFFT,
-          unsigned int elements_per_thread, unsigned int FFTs_per_block>
+template <typename T, unsigned int FFTSize, bool IsForwardFFT, unsigned int elements_per_thread,
+          unsigned int FFTs_per_block>
 int block_complex_fft_1d(T* data) {
     auto arch = zipfft::get_cuda_device_arch();
 

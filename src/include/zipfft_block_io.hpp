@@ -87,10 +87,21 @@ inline __device__ cufftdx::complex<__half2> convert_to_riri<true>(
     const cufftdx::complex<__half2>& value) {
     return value;
 }
+
+// Helper trait to detect the number of dimensions in an index_mapper
+template <typename T>
+struct index_mapper_dims;
+
+template <typename ThisDim, typename... NextDims>
+struct index_mapper_dims<index_mapper<ThisDim, NextDims...>> {
+    static constexpr size_t value = 1 + sizeof...(NextDims);
+};
+
 }  // namespace __io
 
 // Enhanced I/O functionality with index mapper template parameters
 // This allows FFT implementation to define custom memory layouts
+// Automatically handles 2D (element, fft) or 3D (element, fft, batch) layouts
 template <class FFT, class InputIndexMapper, class OutputIndexMapper>
 struct io_with_layout {
     using complex_type = typename FFT::value_type;
@@ -109,6 +120,10 @@ struct io_with_layout {
     static constexpr unsigned int apparent_ffts_per_block =
         FFT::ffts_per_block / FFT::implicit_type_batching;
 
+    // Detect dimensionality of input and output mappers
+    static constexpr size_t input_mapper_dims = __io::index_mapper_dims<InputIndexMapper>::value;
+    static constexpr size_t output_mapper_dims = __io::index_mapper_dims<OutputIndexMapper>::value;
+
     // Check if the register type and FFT structure are type compatible
     template <typename RegisterType, typename MemoryType>
     static constexpr bool is_type_compatible() {
@@ -119,6 +134,7 @@ struct io_with_layout {
     }
 
     // Load function using InputIndexMapper for addressing
+    // Supports both 2D (element, fft) and 3D (element, fft, batch) mappers
     template <bool InputInRRIILayout = false, typename RegisterType, typename IOType>
     static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
     load(const IOType* input, RegisterType* thread_data, unsigned int local_fft_id) {
@@ -127,21 +143,29 @@ struct io_with_layout {
             std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
 
         using input_t = typename FFT::input_type;
-        
+
         // Instantiate the input index mapper
         InputIndexMapper input_layout;
-        
+
         // Compute global FFT ID
         const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
         const unsigned int stride = FFT::stride;
+
+        // For 3D layout (element, fft, batch):
+        // The index_mapper expects (element_id, fft_id, batch_id)
+        // We need to decompose global_fft_id into fft_id and batch_id
+
+        // Dimension 1 is the FFT dimension (number of FFTs per batch)
+        // Dimension 2 is the batch dimension
+        const unsigned int fft_id = global_fft_id % dim_size_v<1, InputIndexMapper>;
+        const unsigned int batch_id = global_fft_id / dim_size_v<1, InputIndexMapper>;
 
         // Load data using index mapper for memory offset calculation
         for (unsigned int i = 0; i < FFT::input_ept; ++i) {
             const unsigned int elem_id = threadIdx.x + i * stride;
             if (elem_id < FFT::input_length) {
-                // Use index mapper: (element_index, batch_index)
-                const size_t offset = input_layout(elem_id, global_fft_id);
-                
+                const size_t offset = input_layout(elem_id, fft_id, batch_id);
+
                 if constexpr (needs_half2_format_conversion) {
                     reinterpret_cast<input_t*>(thread_data)[i] =
                         __io::convert_to_rrii<InputInRRIILayout>(
@@ -155,6 +179,7 @@ struct io_with_layout {
     }
 
     // Store function using OutputIndexMapper for addressing
+    // Supports both 2D (element, fft) and 3D (element, fft, batch) mappers
     template <bool OutputInRRIILayout = false, typename RegisterType, typename IOType>
     static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
     store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id) {
@@ -163,21 +188,29 @@ struct io_with_layout {
             std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
 
         using output_t = typename FFT::output_type;
-        
+
         // Instantiate the output index mapper
         OutputIndexMapper output_layout;
-        
+
         // Compute global FFT ID
         const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
         const unsigned int stride = FFT::stride;
+
+        // For 3D layout (element, fft, batch):
+        // The index_mapper expects (element_id, fft_id, batch_id)
+        // We need to decompose global_fft_id into fft_id and batch_id
+
+        // Dimension 1 is the FFT dimension (number of FFTs per batch)
+        // Dimension 2 is the batch dimension
+        const unsigned int fft_id = global_fft_id % dim_size_v<1, OutputIndexMapper>;
+        const unsigned int batch_id = global_fft_id / dim_size_v<1, OutputIndexMapper>;
 
         // Store data using index mapper for memory offset calculation
         for (int i = 0; i < FFT::output_ept; ++i) {
             const unsigned int elem_id = threadIdx.x + i * stride;
             if (elem_id < FFT::output_length) {
-                // Use index mapper: (element_index, batch_index)
-                const size_t offset = output_layout(elem_id, global_fft_id);
-                
+                const size_t offset = output_layout(elem_id, fft_id, batch_id);
+
                 if constexpr (needs_half2_format_conversion) {
                     reinterpret_cast<output_t*>(output)[offset] =
                         __io::convert_to_riri<OutputInRRIILayout>(
@@ -202,16 +235,14 @@ struct io {
 
     // Define default contiguous memory layouts
     // Layout: (element_index, batch_index) for input
-    using default_input_layout = index_mapper<
-        int_pair<FFT::input_length, 1>,  // elements contiguous
-        int_pair<1, FFT::input_length>    // batches strided by input_length (placeholder size=1)
-    >;
+    using default_input_layout =
+        index_mapper<int_pair<FFT::input_length, 1>,   // elements contiguous
+                     int_pair<1, FFT::input_length>>;  // batches strided by input_length
 
     // Layout: (element_index, batch_index) for output
-    using default_output_layout = index_mapper<
-        int_pair<FFT::output_length, 1>,  // elements contiguous
-        int_pair<1, FFT::output_length>    // batches strided by output_length (placeholder size=1)
-    >;
+    using default_output_layout =
+        index_mapper<int_pair<FFT::output_length, 1>,   // elements contiguous
+                     int_pair<1, FFT::output_length>>;  // batches strided by output_length
 
     // Delegate to io_with_layout with default layouts
     using io_impl = io_with_layout<FFT, default_input_layout, default_output_layout>;
@@ -234,7 +265,7 @@ struct io {
     store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id) {
         io_impl::template store<OutputInRRIILayout>(thread_data, output, local_fft_id);
     }
-    
+
     // Legacy offset functions for compatibility
     static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
         unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;

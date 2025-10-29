@@ -65,16 +65,15 @@ static constexpr std::array<std::tuple<unsigned int, unsigned int, unsigned int,
 
 // Template dispatch functions for each supported configuration
 template <unsigned int FFTSize, unsigned int Stride, unsigned int BatchSize, bool IsForwardFFT>
-void dispatch_fft(float2* data, unsigned int batch_size) {
-    strided_block_complex_fft_1d<float2, FFTSize, Stride, IsForwardFFT, 8u, BatchSize>(data,
-                                                                                       batch_size);
+void dispatch_fft(float2* data) {
+    strided_block_complex_fft_1d<float2, FFTSize, Stride, BatchSize, IsForwardFFT, 8u, 1u>(data);
 }
 
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>
 constexpr auto make_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<StridedComplexFFTConfig1D, std::function<void(float2*, unsigned int)>>,
+        std::pair<StridedComplexFFTConfig1D, std::function<void(float2*)>>,
         sizeof...(Is)>{
         {{StridedComplexFFTConfig1D{
               std::get<0>(SUPPORTED_FFT_CONFIGS[Is]), std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -91,10 +90,10 @@ static const auto dispatch_table =
     make_dispatch_table(std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
 // Create lookup function with compile-time dispatch table
-std::function<void(float2*, unsigned int)> get_fft_function(unsigned int fft_size,
-                                                            unsigned int stride,
-                                                            unsigned int batch_size,
-                                                            bool is_forward) {
+std::function<void(float2*)> get_fft_function(unsigned int fft_size,
+                                              unsigned int stride,
+                                              unsigned int batch_size,
+                                              bool is_forward) {
     // Find matching configuration
     for (const auto& entry : dispatch_table) {
         if (entry.first == StridedComplexFFTConfig1D{fft_size, stride, batch_size, is_forward}) {
@@ -147,7 +146,8 @@ void strided_fft_c2c_1d_impl(torch::Tensor input, bool is_forward) {
     TORCH_CHECK(fft_func != nullptr, "Unsupported FFT configuration: size=", fft_size,
                 ", stride=", stride_size, ", batch=", batch_size, ", is_forward=", is_forward);
 
-    fft_func(data_ptr, batch_size * stride_size);
+    // Execute the FFT function (batch_size is now baked into the template)
+    fft_func(data_ptr);
 }
 
 void strided_fft_c2c_1d(torch::Tensor input) {

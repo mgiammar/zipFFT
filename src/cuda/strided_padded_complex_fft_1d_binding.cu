@@ -74,29 +74,29 @@ static constexpr std::array<
          {256, 192, 256, 1, false},  // 2D input (256, 256) with signal_length=192
          {256, 256, 512, 1, false}}};
 
-// NOTE: Elements-per-thread (8u) current fixed for now, but could be changed
+// NOTE: Elements-per-thread (8u) currently fixed for now, but could be changed
 // in the future...
 template <unsigned int FFTSize, unsigned int SignalLength, unsigned int Stride,
           unsigned int BatchSize>
-void dispatch_fft_forward(float2* input_data, float2* output_data, unsigned int batch_size) {
+void dispatch_fft_forward(float2* input_data, float2* output_data) {
     // clang-format off
-    strided_padded_block_complex_fft_1d<float2, SignalLength, FFTSize, Stride, true, 8u, BatchSize>(input_data, output_data, batch_size);
+    strided_padded_block_complex_fft_1d<float2, SignalLength, FFTSize, Stride, BatchSize, true, 8u, 1u>(input_data, output_data);
     // clang-format on
 }
 
 template <unsigned int FFTSize, unsigned int SignalLength, unsigned int Stride,
           unsigned int BatchSize>
-void dispatch_fft_inverse(float2* input_data, float2* output_data, unsigned int batch_size) {
+void dispatch_fft_inverse(float2* input_data, float2* output_data) {
     // clang-format off
-    strided_padded_block_complex_fft_1d<float2, SignalLength, FFTSize, Stride, false, 8u, BatchSize>(input_data, output_data, batch_size);
+    strided_padded_block_complex_fft_1d<float2, SignalLength, FFTSize, Stride, BatchSize, false, 8u, 1u>(input_data, output_data);
     // clang-format on
 }
 
 template <std::size_t... Is>
 constexpr auto make_forward_dispatch_table(std::index_sequence<Is...>) {
-    return std::array<std::pair<PaddedStridedComplexFFTConfig1D,
-                                std::function<void(float2*, float2*, unsigned int)>>,
-                      sizeof...(Is)>{
+    return std::array<
+        std::pair<PaddedStridedComplexFFTConfig1D, std::function<void(float2*, float2*)>>,
+        sizeof...(Is)>{
         {{PaddedStridedComplexFFTConfig1D{
               std::get<0>(SUPPORTED_FFT_CONFIGS[Is]), std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
               std::get<2>(SUPPORTED_FFT_CONFIGS[Is]), std::get<3>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -110,9 +110,9 @@ constexpr auto make_forward_dispatch_table(std::index_sequence<Is...>) {
 
 template <std::size_t... Is>
 constexpr auto make_inverse_dispatch_table(std::index_sequence<Is...>) {
-    return std::array<std::pair<PaddedStridedComplexFFTConfig1D,
-                                std::function<void(float2*, float2*, unsigned int)>>,
-                      sizeof...(Is)>{
+    return std::array<
+        std::pair<PaddedStridedComplexFFTConfig1D, std::function<void(float2*, float2*)>>,
+        sizeof...(Is)>{
         {{PaddedStridedComplexFFTConfig1D{
               std::get<0>(SUPPORTED_FFT_CONFIGS[Is]), std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
               std::get<2>(SUPPORTED_FFT_CONFIGS[Is]), std::get<3>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -131,9 +131,10 @@ static const auto forward_dispatch_table =
 static const auto inverse_dispatch_table =
     make_inverse_dispatch_table(std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
-std::function<void(float2*, float2*, unsigned int)> get_forward_fft_function(
-    unsigned int fft_size, unsigned int signal_length, unsigned int stride,
-    unsigned int batch_size) {
+std::function<void(float2*, float2*)> get_forward_fft_function(unsigned int fft_size,
+                                                               unsigned int signal_length,
+                                                               unsigned int stride,
+                                                               unsigned int batch_size) {
     for (const auto& entry : forward_dispatch_table) {
         const auto& config = entry.first;
         if (config.fft_size == fft_size && config.signal_length == signal_length &&
@@ -147,9 +148,10 @@ std::function<void(float2*, float2*, unsigned int)> get_forward_fft_function(
     return nullptr;
 }
 
-std::function<void(float2*, float2*, unsigned int)> get_inverse_fft_function(
-    unsigned int fft_size, unsigned int signal_length, unsigned int stride,
-    unsigned int batch_size) {
+std::function<void(float2*, float2*)> get_inverse_fft_function(unsigned int fft_size,
+                                                               unsigned int signal_length,
+                                                               unsigned int stride,
+                                                               unsigned int batch_size) {
     for (const auto& entry : inverse_dispatch_table) {
         const auto& config = entry.first;
         if (config.fft_size == fft_size && config.signal_length == signal_length &&
@@ -277,14 +279,16 @@ void strided_padded_fft_c2c_1d_impl(torch::Tensor input, torch::Tensor output, i
                 ", signal_length=", signal_length, ", stride=", stride_size, ", batch=", batch_size,
                 ", is_forward=", is_forward);
 
-    fft_func(input_data_ptr, output_data_ptr, batch_size * stride_size);
+    // Execute the FFT function (batch_size is now baked into the template)
+    fft_func(input_data_ptr, output_data_ptr);
 }
 
 /**
  * @brief Function (exposed to Python) to perform a padded strided complex-to-complex forward FFT
  *
  * @param input Complex torch tensor of shape (batch_size, signal_length, stride) or (signal_length,
- * stride) (in-place operation)
+ * stride)
+ * @param output Complex torch tensor of shape (batch_size, fft_size, stride) or (fft_size, stride)
  * @param s Total size of the FFT, up to the padded length
  */
 void strided_padded_fft_c2c_1d(torch::Tensor input, torch::Tensor output, int s) {
@@ -294,9 +298,10 @@ void strided_padded_fft_c2c_1d(torch::Tensor input, torch::Tensor output, int s)
 /**
  * @brief Function (exposed to Python) to perform a padded strided complex-to-complex inverse FFT
  *
- * @param input Complex torch tensor of shape (batch_size, signal_length, stride) or (signal_length,
- * stride) (in-place operation)
- * @param s Total size of the FFT, up to the padded length
+ * @param input Complex torch tensor of shape (batch_size, fft_size, stride) or (fft_size, stride)
+ * @param output Complex torch tensor of shape (batch_size, signal_length, stride) or
+ * (signal_length, stride)
+ * @param s Total size of the FFT (input dimension)
  */
 void strided_padded_ifft_c2c_1d(torch::Tensor input, torch::Tensor output, int s) {
     strided_padded_fft_c2c_1d_impl(input, output, s, false);  // Inverse FFT

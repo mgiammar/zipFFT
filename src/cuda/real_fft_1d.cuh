@@ -16,7 +16,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    
+
     // Load using custom input layout
     io_type::load(input_data, thread_data, local_fft_id);
 
@@ -40,7 +40,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
     const unsigned int local_fft_id = threadIdx.y;
-    
+
     // Load using custom input layout
     io_type::load(input_data, thread_data, local_fft_id);
 
@@ -71,15 +71,21 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
                          SM<Arch>());
 
     // Define explicit index mappers
+    // NOTE: Batch size here is the number of FFTs per block, used only for
+    // testing purposes when indexing non-singleton FFTs per block.
     using InputLayout = zipfft::index_mapper<
-        zipfft::int_pair<FFT::input_length, 1>,
-        zipfft::int_pair<1, FFT::input_length>
-    >;
-    
+        zipfft::int_pair<FFT::input_length, 1>,               // elements contiguous (columns)
+        zipfft::int_pair<FFTs_per_block, FFT::input_length>,  // batches strided by input_length
+                                                              // (rows)
+        zipfft::int_pair<0, 0>  // dummy batch dimension for compatibility
+        >;
+
     using OutputLayout = zipfft::index_mapper<
-        zipfft::int_pair<FFT::output_length, 1>,
-        zipfft::int_pair<1, FFT::output_length>
-    >;
+        zipfft::int_pair<FFT::output_length, 1>,               // elements contiguous (columns)
+        zipfft::int_pair<FFTs_per_block, FFT::output_length>,  // batches strided by output_length
+                                                               // (rows)
+        zipfft::int_pair<0, 0>  // dummy batch dimension for compatibility
+        >;
 
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
@@ -87,10 +93,9 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
     // Compile-time branching to determine which FFT kernel to use
     if constexpr (IsForwardFFT) {
         auto kernel_ptr = block_fft_r2c_1d_kernel_with_layout<FFT, InputLayout, OutputLayout>;
-        
-        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(kernel_ptr,
-                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                 FFT::shared_memory_size));
+
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
         scalar_type* input_data_t = reinterpret_cast<scalar_type*>(input_data);
         complex_type* output_data_t = reinterpret_cast<complex_type*>(output_data);
@@ -98,10 +103,9 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
         kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     } else {
         auto kernel_ptr = block_fft_c2r_1d_kernel_with_layout<FFT, InputLayout, OutputLayout>;
-        
-        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(kernel_ptr,
-                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                 FFT::shared_memory_size));
+
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
         complex_type* input_data_t = reinterpret_cast<complex_type*>(input_data);
         scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
