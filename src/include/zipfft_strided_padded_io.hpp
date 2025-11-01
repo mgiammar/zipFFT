@@ -5,23 +5,185 @@
 
 #include "zipfft_block_io.hpp"
 #include "zipfft_common.hpp"
+#include "zipfft_index_mapper.hpp"
 
 namespace zipfft {
-// I/O functionality for block-based FFT execution with cuFFTDx where data
-// on a block level is accessed in a strided pattern AND where the signal
-// is zero-padded up to a certain FFT length
+
+// Enhanced I/O functionality for strided + padded memory access with explicit index mappers
+// Supports both zero-padding on load and truncation on store
+template <class FFT, class InputIndexMapper, class OutputIndexMapper, unsigned int Stride,
+          unsigned int SignalLength>
+struct io_strided_padded_with_layout {
+    using complex_type = typename FFT::value_type;
+    using scalar_type = typename complex_type::value_type;
+
+    static constexpr unsigned int apparent_ffts_per_block =
+        FFT::ffts_per_block / FFT::implicit_type_batching;
+
+    // Detect dimensionality of input and output mappers
+    static constexpr size_t input_mapper_dims = __io::index_mapper_dims<InputIndexMapper>::value;
+    static constexpr size_t output_mapper_dims = __io::index_mapper_dims<OutputIndexMapper>::value;
+
+    // Type compatibility check
+    template <typename RegisterType, typename MemoryType>
+    static constexpr bool is_type_compatible() {
+        return !CUFFTDX_STD::is_void_v<RegisterType> &&
+               (sizeof(RegisterType) == sizeof(complex_type)) &&
+               (alignof(RegisterType) == alignof(complex_type));
+    }
+
+    // Zero-padded strided load function using InputIndexMapper
+    // Reads SignalLength elements from strided memory, pads rest with zeros
+    template <bool InputInRRIILayout = false, typename RegisterType, typename IOType>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    load(const IOType* input, RegisterType* thread_data, unsigned int local_fft_id) {
+        static constexpr bool needs_half2_format_conversion =
+            cufftdx::type_of<FFT>::value != cufftdx::fft_type::r2c &&
+            std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+
+        using input_t = typename FFT::input_type;
+
+        // Instantiate the input index mapper
+        InputIndexMapper input_layout;
+
+        // Compute global FFT ID
+        const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        const unsigned int stride = FFT::stride;
+
+        // Decompose global_fft_id based on dimensionality
+        // For strided access: global_fft_id represents which column we're processing
+        const unsigned int column_id = global_fft_id % Stride;
+        const unsigned int batch_id = global_fft_id / Stride;
+
+        constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
+
+        // Load data with zero-padding using strided access pattern
+        for (unsigned int i = 0; i < FFT::input_ept; ++i) {
+            const unsigned int elem_id = threadIdx.x + i * stride;
+
+            for (unsigned int j = 0; j < inner_loop_limit; ++j) {
+                // Calculate flat element index (row index for strided column access)
+                const unsigned int flat_elem = elem_id * inner_loop_limit + j;
+
+                if (flat_elem < SignalLength) {
+                    // Read from memory using index mapper
+                    // Mapper takes: (row_in_column, column_id, batch_id)
+                    const size_t offset = input_layout(flat_elem, column_id, batch_id);
+
+                    if constexpr (needs_half2_format_conversion) {
+                        reinterpret_cast<input_t*>(thread_data)[i * inner_loop_limit + j] =
+                            __io::convert_to_rrii<InputInRRIILayout>(
+                                reinterpret_cast<const input_t*>(input)[offset]);
+                    } else {
+                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
+                            reinterpret_cast<const IOType*>(input)[offset];
+                    }
+                } else {
+                    // Pad with zeros for elements beyond SignalLength
+                    reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
+                        get_zero<IOType>();
+                }
+            }
+        }
+    }
+
+    // Truncated strided store function using OutputIndexMapper
+    // Only stores first SignalLength elements to strided memory, discards rest
+    template <bool OutputInRRIILayout = false, typename RegisterType, typename IOType>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id) {
+        static constexpr bool needs_half2_format_conversion =
+            cufftdx::type_of<FFT>::value != cufftdx::fft_type::c2r &&
+            std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+
+        using output_t = typename FFT::output_type;
+
+        // Instantiate the output index mapper
+        OutputIndexMapper output_layout;
+
+        // Compute global FFT ID
+        const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        const unsigned int stride = FFT::stride;
+
+        // Decompose global_fft_id for strided access
+        const unsigned int column_id = global_fft_id % dim_size_v<1, OutputIndexMapper>;
+        const unsigned int batch_id = global_fft_id / dim_size_v<1, OutputIndexMapper>;
+
+        constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
+
+        // Store data with truncation using strided access pattern
+        for (unsigned int i = 0; i < FFT::output_ept; ++i) {
+            const unsigned int elem_id = threadIdx.x + i * stride;
+
+            for (unsigned int j = 0; j < inner_loop_limit; ++j) {
+                // Calculate flat element index (row index for strided column access)
+                const unsigned int flat_elem = elem_id * inner_loop_limit + j;
+
+                if (flat_elem < SignalLength) {
+                    // Write to memory using index mapper
+                    // Mapper takes: (row_in_column, column_id, batch_id)
+                    const size_t offset = output_layout(flat_elem, column_id, batch_id);
+
+                    if constexpr (needs_half2_format_conversion) {
+                        reinterpret_cast<output_t*>(output)[offset] =
+                            __io::convert_to_riri<OutputInRRIILayout>(
+                                reinterpret_cast<const output_t*>(
+                                    thread_data)[i * inner_loop_limit + j]);
+                    } else {
+                        reinterpret_cast<IOType*>(output)[offset] =
+                            reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
+                    }
+                }
+            }
+        }
+    }
+};
+
+// Backward-compatible io_strided_padded struct that uses default layouts
 template <class FFT, unsigned int Stride, unsigned int SignalLength>
 struct io_strided_padded : public io<FFT> {
     using io<FFT>::apparent_ffts_per_block;
+    using complex_type = typename FFT::value_type;
+    using scalar_type = typename complex_type::value_type;
 
+    // Define default strided + padded memory layouts
+    // Shape: (batch, SignalLength_rows, Stride_columns)
+    // Access pattern: column-major with stride, reading/writing only first SignalLength rows
+    using default_input_layout =
+        index_mapper<int_pair<SignalLength, Stride>,       // rows strided by Stride
+                     int_pair<Stride, 1>,                  // columns contiguous
+                     int_pair<1, SignalLength * Stride>>;  // batches
+
+    using default_output_layout = default_input_layout;
+
+    // Delegate to io_strided_padded_with_layout with default layouts
+    using io_impl = io_strided_padded_with_layout<FFT, default_input_layout, default_output_layout,
+                                                  Stride, SignalLength>;
+
+    // Forward type compatibility check
+    template <typename RegisterType, typename MemoryType>
+    static constexpr bool is_type_compatible() {
+        return io_impl::template is_type_compatible<RegisterType, MemoryType>();
+    }
+
+    // Forward load/store to implementation with default layouts
+    template <bool InputInRRIILayout = false, typename RegisterType, typename IOType>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    load(const IOType* input, RegisterType* thread_data, unsigned int local_fft_id) {
+        io_impl::template load<InputInRRIILayout>(input, thread_data, local_fft_id);
+    }
+
+    template <bool OutputInRRIILayout = false, typename RegisterType, typename IOType>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id) {
+        io_impl::template store<OutputInRRIILayout>(thread_data, output, local_fft_id);
+    }
+
+    // Legacy helper functions for backward compatibility
     static inline __device__ unsigned int this_global_fft_id(unsigned int local_fft_id) {
         return blockIdx.x * apparent_ffts_per_block + local_fft_id;
     }
 
-    // For an input of (outer_batch, SignalLength, Stride), determine
-    // which index [0, outer_batch-1] we are in. Used to adjust the starting
-    // read index of the load method(s).
-    // NOTE Assumes kernel grid launch dimensions are set to encompass outer_batch.
     static inline __device__ unsigned int input_outer_batch_index(unsigned int local_fft_id) {
         return this_global_fft_id(local_fft_id) / Stride;
     }
@@ -30,9 +192,6 @@ struct io_strided_padded : public io<FFT> {
         return this_global_fft_id(local_fft_id) / Stride;
     }
 
-    // For an input of (outer_batch, SignalLength, Stride), determine
-    // which index [0, Stride-1] we are in *within* an assumed 2D array. This
-    // is effectively the column index within the 2D array.
     static inline __device__ unsigned int input_inner_batch_index(unsigned int local_fft_id) {
         return this_global_fft_id(local_fft_id) % Stride;
     }
@@ -41,103 +200,15 @@ struct io_strided_padded : public io<FFT> {
         return this_global_fft_id(local_fft_id) % Stride;
     }
 
-    // For an input of (outer_batch, SignalLength, Stride), determine
-    // the starting read index within global memory (for a particular block)
-    // in the range of [0, outer_batch * SignalLength * Stride). Is
-    // effectively the starting index of the column within the 2D array.
     static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
-        unsigned int outer_batch_index = input_outer_batch_index(local_fft_id);
-        unsigned int inner_batch_index = input_inner_batch_index(local_fft_id);
-        return (outer_batch_index * SignalLength * Stride) + inner_batch_index;
+        return input_inner_batch_index(local_fft_id);
     }
 
     static inline __device__ unsigned int output_batch_offset(unsigned int local_fft_id) {
-        unsigned int outer_batch_index = output_outer_batch_index(local_fft_id);
-        unsigned int inner_batch_index = output_inner_batch_index(local_fft_id);
-        return (outer_batch_index * SignalLength * Stride) + inner_batch_index;
+        return output_inner_batch_index(local_fft_id);
     }
+};
 
-    // Do a zero-padded load of the data into the registers while accessing the
-    // data in a strided (non-contigious) pattern. Structure templated
-    // SignalLength parameter determines how many elements should be read from
-    // memory (e.g. 32 non-zero values), and the function places zeros in all
-    // other register positions where the FFT length surpasses the signal
-    // length. The Stride parameter determines how many elements are skipped
-    // between each read, allowing for multi-dimensional arrays to be read
-    // across non-contigious dimensions.
-    // NOTE: templated Batches parameter is used to prevent out-of-bounds
-    // memory access when there are fewer than 'Stride' elements to read in
-    template <unsigned int Batches = Stride, typename RegisterType, typename IOType>
-    static inline __device__ void load(const IOType* input, RegisterType* thread_data,
-                                       unsigned int local_fft_id) {
-        using input_t = typename FFT::input_type;
-
-        constexpr auto inner_loop_limit = sizeof(input_t) / sizeof(IOType);
-        const unsigned int batch_id = input_inner_batch_index(local_fft_id);
-
-        const unsigned int batch_offset = input_batch_offset(local_fft_id);
-        const unsigned int stride = Stride * FFT::stride;
-        unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
-
-        const unsigned int signal_length_limit = SignalLength * Stride;
-
-        unsigned int read_idx;
-
-        // Loop over all elements doing appropriate memory reads
-        for (unsigned int i = 0; i < FFT::input_ept; i++) {
-            for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                // Check batch ID against Batches to prevent out-of-bounds access
-                if (batch_id < Batches) {
-                    read_idx = (i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit);
-                    if (read_idx < signal_length_limit) {
-                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-                            reinterpret_cast<const IOType*>(input)[index + j];
-                    } else {
-                        reinterpret_cast<IOType*>(thread_data)[i * inner_loop_limit + j] =
-                            get_zero<IOType>();
-                    }
-                    index += inner_loop_limit * stride;
-                }
-            }
-        }
-    }
-
-    // Store data based on a stride length. Any values in the registers which exceed
-    // stride length will be skipped on their storage. The Stride parameter
-    // determines how many elements are skipped between each write, allowing for
-    // multi-dimensional arrays to be written across non-contigious dimensions.
-    template <unsigned int Batches = Stride, typename RegisterType, typename IOType>
-    static inline __device__ void store(const RegisterType* thread_data, IOType* output,
-                                        unsigned int local_fft_id) {
-        using output_t = typename FFT::output_type;
-
-        constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
-        const unsigned int batch_id = output_inner_batch_index(local_fft_id);
-
-        const unsigned int batch_offset = output_batch_offset(local_fft_id);
-        const unsigned int stride = Stride * FFT::stride;
-        unsigned int index = batch_offset + (threadIdx.x * Stride * inner_loop_limit);
-
-        const unsigned int signal_length_limit = SignalLength * Stride;
-
-        unsigned int write_idx;
-
-        // Loop over all elements doing appropriate memory writes
-        for (unsigned int i = 0; i < FFT::output_ept; i++) {
-            for (unsigned int j = 0; j < inner_loop_limit; ++j) {
-                // Check batch ID against Batches to prevent out-of-bounds access
-                if (batch_id < Batches) {
-                    write_idx = i * stride * inner_loop_limit + j + threadIdx.x * inner_loop_limit;
-                    if (write_idx < signal_length_limit) {
-                        reinterpret_cast<IOType*>(output)[index + j] =
-                            reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
-                    }
-                }
-                index += inner_loop_limit * stride;
-            }
-        }
-    }
-};  // struct io_strided_padded
 }  // namespace zipfft
 
 #endif  // ZIPFFT_STRIDED_PADDED_IO_HPP_

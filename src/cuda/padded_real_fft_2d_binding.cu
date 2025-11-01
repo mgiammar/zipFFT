@@ -7,7 +7,7 @@
  * Author:  Matthew Giammar
  * E-mail:  mdgiammar@gmail.com
  * License: MIT License
- * Date:    20 October 2025
+ * Date:    29 October 2025
  */
 
 #include <c10/util/complex.h>
@@ -81,39 +81,39 @@ static constexpr std::array<
 // Template dispatch functions for each supported configuration
 // For forward FFT (real-to-complex)
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
-          unsigned int FFTSizeY, unsigned int BatchSize, bool IsForwardFFT>
-void dispatch_padded_r2c_fft(float* input_data, float2* output_data, unsigned int batch_size) {
+          unsigned int FFTSizeY, unsigned int BatchSize>
+void dispatch_padded_r2c_fft(float* input_data, float2* output_data) {
     // Using optimal elements per thread and ffts per block based on FFT sizes
     constexpr unsigned int elements_per_thread_x = FFTSizeX <= 128 ? 8 : 16;
     constexpr unsigned int elements_per_thread_y = FFTSizeY <= 128 ? 8 : 16;
     constexpr unsigned int ffts_per_block_x = 1;
     constexpr unsigned int ffts_per_block_y = 1;
 
-    padded_block_real_fft_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, true,
-                             elements_per_thread_x, elements_per_thread_y, ffts_per_block_x,
-                             ffts_per_block_y>(input_data, output_data, batch_size);
+    padded_block_real_fft_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
+                             BatchSize, true, elements_per_thread_x, elements_per_thread_y,
+                             ffts_per_block_x, ffts_per_block_y>(input_data, output_data);
 }
 
 // For inverse FFT (complex-to-real)
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
-          unsigned int FFTSizeY, unsigned int BatchSize, bool IsForwardFFT>
-void dispatch_padded_c2r_fft(float2* input_data, float* output_data, unsigned int batch_size) {
+          unsigned int FFTSizeY, unsigned int BatchSize>
+void dispatch_padded_c2r_fft(float2* input_data, float* output_data) {
     // Using optimal elements per thread and ffts per block based on FFT sizes
     constexpr unsigned int elements_per_thread_x = FFTSizeX <= 128 ? 8 : 16;
     constexpr unsigned int elements_per_thread_y = FFTSizeY <= 128 ? 8 : 16;
     constexpr unsigned int ffts_per_block_x = 1;
     constexpr unsigned int ffts_per_block_y = 1;
 
-    padded_block_real_fft_2d<float2, float, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, false,
-                             elements_per_thread_x, elements_per_thread_y, ffts_per_block_x,
-                             ffts_per_block_y>(input_data, output_data, batch_size);
+    padded_block_real_fft_2d<float2, float, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
+                             BatchSize, false, elements_per_thread_x, elements_per_thread_y,
+                             ffts_per_block_x, ffts_per_block_y>(input_data, output_data);
 }
 
 // Helper template to create dispatch table entries at compile time for r2c
 template <std::size_t... Is>
 constexpr auto make_padded_r2c_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<PaddedRealFFTConfig2D, std::function<void(float*, float2*, unsigned int)>>,
+        std::pair<PaddedRealFFTConfig2D, std::function<void(float*, float2*)>>,
         sizeof...(Is)>{
         {{PaddedRealFFTConfig2D{
               std::get<0>(SUPPORTED_FFT_CONFIGS[Is]), std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -124,9 +124,9 @@ constexpr auto make_padded_r2c_dispatch_table(std::index_sequence<Is...>) {
               if constexpr (std::get<5>(config) == true) {  // Only include forward transforms
                   return dispatch_padded_r2c_fft<std::get<1>(config), std::get<0>(config),
                                                  std::get<3>(config), std::get<2>(config),
-                                                 std::get<4>(config), true>;
+                                                 std::get<4>(config)>;
               } else {
-                  return static_cast<void (*)(float*, float2*, unsigned int)>(nullptr);
+                  return static_cast<void (*)(float*, float2*)>(nullptr);
               }
           }()}...}};
 }
@@ -135,7 +135,7 @@ constexpr auto make_padded_r2c_dispatch_table(std::index_sequence<Is...>) {
 template <std::size_t... Is>
 constexpr auto make_padded_c2r_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<PaddedRealFFTConfig2D, std::function<void(float2*, float*, unsigned int)>>,
+        std::pair<PaddedRealFFTConfig2D, std::function<void(float2*, float*)>>,
         sizeof...(Is)>{
         {{PaddedRealFFTConfig2D{
               std::get<0>(SUPPORTED_FFT_CONFIGS[Is]), std::get<1>(SUPPORTED_FFT_CONFIGS[Is]),
@@ -146,9 +146,9 @@ constexpr auto make_padded_c2r_dispatch_table(std::index_sequence<Is...>) {
               if constexpr (std::get<5>(config) == false) {  // Only include inverse transforms
                   return dispatch_padded_c2r_fft<std::get<1>(config), std::get<0>(config),
                                                  std::get<3>(config), std::get<2>(config),
-                                                 std::get<4>(config), false>;
+                                                 std::get<4>(config)>;
               } else {
-                  return static_cast<void (*)(float2*, float*, unsigned int)>(nullptr);
+                  return static_cast<void (*)(float2*, float*)>(nullptr);
               }
           }()}...}};
 }
@@ -160,7 +160,7 @@ static const auto padded_c2r_dispatch_table =
     make_padded_c2r_dispatch_table(std::make_index_sequence<SUPPORTED_FFT_CONFIGS.size()>{});
 
 // Create lookup function for r2c with compile-time dispatch table
-std::function<void(float*, float2*, unsigned int)> get_padded_r2c_fft_function(
+std::function<void(float*, float2*)> get_padded_r2c_fft_function(
     unsigned int signal_length_y, unsigned int signal_length_x, unsigned int fft_size_y,
     unsigned int fft_size_x, unsigned int batch_size, bool is_forward) {
     // Find matching configuration
@@ -177,7 +177,7 @@ std::function<void(float*, float2*, unsigned int)> get_padded_r2c_fft_function(
 }
 
 // Create lookup function for c2r with compile-time dispatch table
-std::function<void(float2*, float*, unsigned int)> get_padded_c2r_fft_function(
+std::function<void(float2*, float*)> get_padded_c2r_fft_function(
     unsigned int signal_length_y, unsigned int signal_length_x, unsigned int fft_size_y,
     unsigned int fft_size_x, unsigned int batch_size, bool is_forward) {
     // Find matching configuration
@@ -207,7 +207,8 @@ std::vector<std::tuple<int, int, int, int, int, bool>> get_supported_padded_fft_
 }
 
 // Common implementation function for padded r2c FFT
-void padded_real_fft_r2c_2d_impl(torch::Tensor input, torch::Tensor output, int fft_size_y, int fft_size_x) {
+void padded_real_fft_r2c_2d_impl(torch::Tensor input, torch::Tensor output, int fft_size_y,
+                                 int fft_size_x) {
     TORCH_CHECK(input.is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(output.is_cuda(), "Output tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kFloat32, "Input tensor must be of type torch.float32");
@@ -231,14 +232,14 @@ void padded_real_fft_r2c_2d_impl(torch::Tensor input, torch::Tensor output, int 
 
     // Validate output dimensions match expected FFT output size
     unsigned int expected_stride = fft_size_x / 2 + 1;
-    if (output.dim() == 2) {          // output shape (H', W'//2+1)
-        TORCH_CHECK(output.size(0) == fft_size_y, 
+    if (output.dim() == 2) {  // output shape (H', W'//2+1)
+        TORCH_CHECK(output.size(0) == fft_size_y,
                     "Output tensor first dimension must match fft_size_y");
         TORCH_CHECK(output.size(1) == expected_stride,
                     "Output tensor second dimension must be fft_size_x/2+1");
-    } else if (output.dim() == 3) {             // output shape (batch, H', W'//2+1)
+    } else if (output.dim() == 3) {  // output shape (batch, H', W'//2+1)
         TORCH_CHECK(batch_size == output.size(0), "Input and output batch sizes must match");
-        TORCH_CHECK(output.size(1) == fft_size_y, 
+        TORCH_CHECK(output.size(1) == fft_size_y,
                     "Output tensor second dimension must match fft_size_y");
         TORCH_CHECK(output.size(2) == expected_stride,
                     "Output tensor third dimension must be fft_size_x/2+1");
@@ -263,11 +264,12 @@ void padded_real_fft_r2c_2d_impl(torch::Tensor input, torch::Tensor output, int 
                 ", signal_x=", signal_length_x, ", fft_y=", fft_size_y, ", fft_x=", fft_size_x,
                 ", batch=", batch_size, ", is_forward=true");
 
-    fft_func(input_ptr, output_ptr, batch_size);
+    fft_func(input_ptr, output_ptr);
 }
 
 // Common implementation function for padded c2r FFT
-void padded_real_fft_c2r_2d_impl(torch::Tensor input, torch::Tensor output, int fft_size_y, int fft_size_x) {
+void padded_real_fft_c2r_2d_impl(torch::Tensor input, torch::Tensor output, int fft_size_y,
+                                 int fft_size_x) {
     TORCH_CHECK(input.is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(output.is_cuda(), "Output tensor must be on CUDA device");
     TORCH_CHECK(input.dtype() == torch::kComplexFloat,
@@ -280,13 +282,13 @@ void padded_real_fft_c2r_2d_impl(torch::Tensor input, torch::Tensor output, int 
     unsigned int expected_stride = fft_size_x / 2 + 1;
     if (input.dim() == 2) {  // input shape (H', W'//2+1)
         batch_size = 1;
-        TORCH_CHECK(input.size(0) == fft_size_y, 
+        TORCH_CHECK(input.size(0) == fft_size_y,
                     "Input tensor first dimension must match fft_size_y");
         TORCH_CHECK(input.size(1) == expected_stride,
                     "Input tensor second dimension must be fft_size_x/2+1");
-    } else if (input.dim() == 3) {             // input shape (batch, H', W'//2+1)
-        batch_size = input.size(0);            // batch size
-        TORCH_CHECK(input.size(1) == fft_size_y, 
+    } else if (input.dim() == 3) {  // input shape (batch, H', W'//2+1)
+        batch_size = input.size(0);  // batch size
+        TORCH_CHECK(input.size(1) == fft_size_y,
                     "Input tensor second dimension must match fft_size_y");
         TORCH_CHECK(input.size(2) == expected_stride,
                     "Input tensor third dimension must be fft_size_x/2+1");
@@ -323,16 +325,18 @@ void padded_real_fft_c2r_2d_impl(torch::Tensor input, torch::Tensor output, int 
                 ", signal_x=", signal_length_x, ", fft_y=", fft_size_y, ", fft_x=", fft_size_x,
                 ", batch=", batch_size, ", is_forward=false");
 
-    fft_func(input_ptr, output_ptr, batch_size);
+    fft_func(input_ptr, output_ptr);
 }
 
 // Function to expose to Python - Forward FFT (r2c)
-void padded_real_fft_r2c_2d(torch::Tensor input, torch::Tensor output, int fft_size_y, int fft_size_x) {
+void padded_real_fft_r2c_2d(torch::Tensor input, torch::Tensor output, int fft_size_y,
+                            int fft_size_x) {
     padded_real_fft_r2c_2d_impl(input, output, fft_size_y, fft_size_x);  // Forward FFT
 }
 
 // Function to expose to Python - Inverse FFT (c2r)
-void padded_real_fft_c2r_2d(torch::Tensor input, torch::Tensor output, int fft_size_y, int fft_size_x) {
+void padded_real_fft_c2r_2d(torch::Tensor input, torch::Tensor output, int fft_size_y,
+                            int fft_size_x) {
     padded_real_fft_c2r_2d_impl(input, output, fft_size_y, fft_size_x);  // Inverse FFT
 }
 

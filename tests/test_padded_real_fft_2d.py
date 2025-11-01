@@ -65,7 +65,8 @@ def run_padded_forward_real_fft_2d_test(
         output_shape = (batch_size, fft_size_y, stride_y)
 
     # Create random data for the actual signal (not padded yet)
-    input_data = torch.randn(input_shape, dtype=dtype, device="cuda")
+    gen = torch.Generator(device="cuda")
+    input_data = torch.randn(input_shape, dtype=dtype, device="cuda", generator=gen)
 
     # Create output tensor for our implementation
     output_data = torch.zeros(output_shape, dtype=torch.complex64, device="cuda")
@@ -75,16 +76,6 @@ def run_padded_forward_real_fft_2d_test(
 
     # Run our implementation with implicit padding
     zipfft.padded_rfft2d.fft(input_data, output_data, fft_size_y, fft_size_x)
-
-    ### DEBUGGING: Save outputs as numpy if they don't match
-    if not torch.allclose(torch_output, output_data, atol=atol):
-        np.savez(
-            "debug_padded_rfft2d_mismatch.npz",
-            input_data=input_data.cpu().numpy(),
-            torch_output=torch_output.cpu().numpy(),
-            zipfft_output=output_data.cpu().numpy(),
-        )
-        print("Saved debug_padded_rfft2d_mismatch.npz for further analysis.")
 
     # Verify results
     assert torch.allclose(
@@ -115,7 +106,10 @@ def run_padded_inverse_real_fft_2d_test(
         output_shape = (batch_size, signal_length_y, signal_length_x)
 
     # Start with random complex data (representing FFT coefficients)
-    input_data = torch.randn(input_shape, dtype=torch.complex64, device="cuda")
+    gen = torch.Generator(device="cuda")
+    input_data = torch.randn(
+        input_shape, dtype=torch.complex64, device="cuda", generator=gen
+    )
 
     # Create output tensor for our implementation (unpadded)
     output_data = torch.zeros(output_shape, dtype=dtype, device="cuda")
