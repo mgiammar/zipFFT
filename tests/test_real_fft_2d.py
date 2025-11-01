@@ -81,7 +81,7 @@ def run_forward_real_fft_2d_test(
     max_diff = torch.max(torch.abs(torch_output - output_data))
     assert torch.allclose(
         torch_output, output_data, atol=atol
-    ), f"Real 2D FFT results do not match ground truth. Max diff: {torch.max(torch.abs(torch_output - output_data))}"
+    ), f"Real 2D FFT results do not match ground truth. Max diff: {max_diff}"
 
 
 def run_inverse_real_fft_2d_test(

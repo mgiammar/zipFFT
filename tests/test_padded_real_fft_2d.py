@@ -2,7 +2,6 @@
 
 import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
 import zipfft
-import numpy as np
 
 import pytest
 
