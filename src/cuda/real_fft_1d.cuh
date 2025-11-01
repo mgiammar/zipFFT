@@ -2,50 +2,54 @@
 
 #include "../include/zipfft_block_io.hpp"
 #include "../include/zipfft_common.hpp"
+#include "../include/zipfft_index_mapper.hpp"
 
-// --- r2c & c2r Kernel Definitions ---
-template <class FFT, typename ComplexType = typename FFT::value_type,
+// --- r2c Kernel with Explicit Index Mappers ---
+template <class FFT, class InputLayout, class OutputLayout,
+          typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void block_fft_r2c_1d_kernel(ScalarType* input_data, ComplexType* output_data) {
+    void block_fft_r2c_1d_kernel_with_layout(ScalarType* input_data, ComplexType* output_data) {
     using complex_type = ComplexType;
+    using io_type = zipfft::io_with_layout<FFT, InputLayout, OutputLayout>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
-
-    // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
-    // Then load data from global memory to local memory
     const unsigned int local_fft_id = threadIdx.y;
-    zipfft::io<FFT>::load(input_data, thread_data, local_fft_id);
+
+    // Load using custom input layout
+    io_type::load(input_data, thread_data, local_fft_id);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
-    // Save results
-    zipfft::io<FFT>::store(thread_data, output_data, local_fft_id);
+    // Store using custom output layout
+    io_type::store(thread_data, output_data, local_fft_id);
 }
 
-template <class FFT, typename ComplexType = typename FFT::value_type,
+// --- c2r Kernel with Explicit Index Mappers ---
+template <class FFT, class InputLayout, class OutputLayout,
+          typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void block_fft_c2r_1d_kernel(ComplexType* input_data, ScalarType* output_data) {
+    void block_fft_c2r_1d_kernel_with_layout(ComplexType* input_data, ScalarType* output_data) {
     using complex_type = ComplexType;
+    using io_type = zipfft::io_with_layout<FFT, InputLayout, OutputLayout>;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
-
-    // ID of FFT in CUDA block, in range [0; FFT::ffts_per_block)
-    // Then load data from global memory to local memory
     const unsigned int local_fft_id = threadIdx.y;
-    zipfft::io<FFT>::load(input_data, thread_data, local_fft_id);
+
+    // Load using custom input layout
+    io_type::load(input_data, thread_data, local_fft_id);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem);
 
-    // Save results
-    zipfft::io<FFT>::store(thread_data, output_data, local_fft_id);
+    // Store using custom output layout
+    io_type::store(thread_data, output_data, local_fft_id);
 }
 
 // --- Unified Launcher Definition (for both r2c & c2r) ---
@@ -58,8 +62,6 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
     using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
     using scalar_precision_type = std::conditional_t<IsForwardFFT, Input_T, Output_T>;
 
-    // Conditional statements are used to determine the FFT traits
-    // about direction and precision
     constexpr auto fft_direction = IsForwardFFT ? fft_direction::forward : fft_direction::inverse;
     constexpr auto fft_type = IsForwardFFT ? fft_type::r2c : fft_type::c2r;
 
@@ -68,39 +70,49 @@ inline void block_real_fft_1d_launcher(Input_T* input_data, Output_T* output_dat
                          ElementsPerThread<elements_per_thread>() + FFTsPerBlock<FFTs_per_block>() +
                          SM<Arch>());
 
+    // Define explicit index mappers
+    // NOTE: Batch size here is the number of FFTs per block, used only for
+    // testing purposes when indexing non-singleton FFTs per block.
+    using InputLayout = zipfft::index_mapper<
+        zipfft::int_pair<FFT::input_length, 1>,               // elements contiguous (columns)
+        zipfft::int_pair<FFTs_per_block, FFT::input_length>,  // batches strided by input_length
+                                                              // (rows)
+        zipfft::int_pair<0, 0>  // dummy batch dimension for compatibility
+        >;
+
+    using OutputLayout = zipfft::index_mapper<
+        zipfft::int_pair<FFT::output_length, 1>,               // elements contiguous (columns)
+        zipfft::int_pair<FFTs_per_block, FFT::output_length>,  // batches strided by output_length
+                                                               // (rows)
+        zipfft::int_pair<0, 0>  // dummy batch dimension for compatibility
+        >;
+
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
     // Compile-time branching to determine which FFT kernel to use
     if constexpr (IsForwardFFT) {
-        // Increase shared memory size, if needed
-        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(block_fft_r2c_1d_kernel<FFT>,
-                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                 FFT::shared_memory_size));
+        auto kernel_ptr = block_fft_r2c_1d_kernel_with_layout<FFT, InputLayout, OutputLayout>;
 
-        // Cast input data to cuFFTDx types
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
         scalar_type* input_data_t = reinterpret_cast<scalar_type*>(input_data);
         complex_type* output_data_t = reinterpret_cast<complex_type*>(output_data);
 
-        // Launch the kernel
-        block_fft_r2c_1d_kernel<FFT>
-            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     } else {
-        // Increase shared memory size, if needed
-        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(block_fft_c2r_1d_kernel<FFT>,
-                                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                 FFT::shared_memory_size));
+        auto kernel_ptr = block_fft_c2r_1d_kernel_with_layout<FFT, InputLayout, OutputLayout>;
 
-        // Cast input data to cuFFTDx types
+        CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
+            kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
         complex_type* input_data_t = reinterpret_cast<complex_type*>(input_data);
         scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
 
-        // Launch the kernel
-        block_fft_c2r_1d_kernel<FFT>
-            <<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     }
 
-    // Ensure no errors afterwards
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
     CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }
@@ -140,9 +152,9 @@ int block_real_fft_1d(Input_T* input_data, Output_T* output_data) {
                       << ". Supported architectures are 800, 860, 870, 890, "
                          "900, and 1200."
                       << std::endl;
-            return -1;  // Error code for unsupported architecture
+            return -1;
     }
     /* clang-format on */
 
-    return 0;  // Success
+    return 0;
 }

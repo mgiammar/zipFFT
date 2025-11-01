@@ -19,11 +19,12 @@ TYPE_MAP = {
 # Only get configs if rfft2d is available
 if zipfft.rfft2d is not None:
     ALL_CONFIGS = zipfft.rfft2d.get_supported_fft_configs()
+    # Config format: (fft_size_y, fft_size_x, batch_size, is_forward)
     FORWARD_FFT_CONFIGS = [
-        (cfg[0], cfg[1], cfg[2], cfg[3]) for cfg in ALL_CONFIGS if cfg[4] is True
+        (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is True
     ]
     INVERSE_FFT_CONFIGS = [
-        (cfg[0], cfg[1], cfg[2], cfg[3]) for cfg in ALL_CONFIGS if cfg[4] is False
+        (cfg[0], cfg[1], cfg[2]) for cfg in ALL_CONFIGS if cfg[3] is False
     ]
 else:
     FORWARD_FFT_CONFIGS = []
@@ -37,9 +38,8 @@ NUM_TEST_REPEATS = 10
 
 
 def run_forward_real_fft_2d_test(
-    n_cols: int,  # fft_size_x
     n_rows: int,  # fft_size_y
-    stride_y: int,
+    n_cols: int,  # fft_size_x
     batch_size: int = 1,
     dtype: torch.dtype = torch.float32,
     atol: float = 1e-3,  # NOTE: Looser tolerance for accumulated multi-dimensional FFTs
@@ -48,12 +48,10 @@ def run_forward_real_fft_2d_test(
 
     Parameters
     ----------
-    n_cols : int
-        Number of columns in the 2D array (size of FFT along first dimension).
     n_rows : int
-        Number of rows in the 2D array (size of FFT along second dimension).
-    stride_y : int
-        The stride size (second dimension length).
+        Number of rows in the 2D array (size of FFT along Y dimension / height).
+    n_cols : int
+        Number of columns in the 2D array (size of FFT along X dimension / width).
     batch_size : int, optional
         The batch size, by default 1.
     dtype : torch.dtype, optional
@@ -80,15 +78,15 @@ def run_forward_real_fft_2d_test(
     zipfft.rfft2d.fft(input_data, output_data)
 
     # Verify results
+    max_diff = torch.max(torch.abs(torch_output - output_data))
     assert torch.allclose(
         torch_output, output_data, atol=atol
-    ), f"Real 2D FFT results do not match ground truth. Max diff: {torch.max(torch.abs(torch_output - output_data))}"
+    ), f"Real 2D FFT results do not match ground truth. Max diff: {max_diff}"
 
 
 def run_inverse_real_fft_2d_test(
-    n_cols: int,
-    n_rows: int,
-    stride_y: int,
+    n_rows: int,  # fft_size_y
+    n_cols: int,  # fft_size_x
     batch_size: int = 1,
     dtype: torch.dtype = torch.float32,
     atol: float = 1e-3,  # NOTE: looser tolerance for accumulated multi-dimensional FFTs
@@ -97,12 +95,10 @@ def run_inverse_real_fft_2d_test(
 
     Parameters
     ----------
-    n_cols : int
-        Number of columns in the 2D array (size of FFT along first dimension).
     n_rows : int
-        Number of rows in the 2D array (size of FFT along second dimension).
-    stride_y : int
-        The stride size (second dimension length).
+        Number of rows in the 2D array (size of FFT along Y dimension / height).
+    n_cols : int
+        Number of columns in the 2D array (size of FFT along X dimension / width).
     batch_size : int, optional
         The batch size, by default 1.
     dtype : torch.dtype, optional
@@ -117,7 +113,7 @@ def run_inverse_real_fft_2d_test(
         input_shape = (batch_size, n_rows, n_cols // 2 + 1)
         output_shape = (batch_size, n_rows, n_cols)
 
-    # Start with random real data
+    # Start with random complex data
     input_data = torch.randn(input_shape, dtype=torch.complex64, device="cuda")
     input_data_clone = torch.empty_like(input_data).copy_(input_data)
 
@@ -131,34 +127,33 @@ def run_inverse_real_fft_2d_test(
     zipfft.rfft2d.ifft(input_data, output_data)
 
     # Verify results
+    max_diff = torch.max(torch.abs(torch_output - output_data))
     assert torch.allclose(
         torch_output, output_data, atol=atol
-    ), f"Inverse Real 2D FFT results do not match ground truth. Max diff: {torch.max(torch.abs(torch_output - output_data))}"
+    ), f"Inverse Real 2D FFT results do not match ground truth. Max diff: {max_diff}"
 
 
-@pytest.mark.parametrize("n_rows,n_cols,stride_y,batch_size", FORWARD_FFT_CONFIGS)
+@pytest.mark.parametrize("n_rows,n_cols,batch_size", FORWARD_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
-def test_real_fft_r2c_2d(n_rows, n_cols, stride_y, batch_size, dtype):
-    """Test forward real 2D FFT for specific sizes, stride, batch size, and dtype."""
+def test_real_fft_r2c_2d(n_rows, n_cols, batch_size, dtype):
+    """Test forward real 2D FFT for specific sizes, batch size, and dtype."""
     for _ in range(NUM_TEST_REPEATS):
         run_forward_real_fft_2d_test(
             n_rows=n_rows,
             n_cols=n_cols,
-            stride_y=stride_y,
             batch_size=batch_size,
             dtype=dtype,
         )
 
 
-@pytest.mark.parametrize("n_rows,n_cols,stride_y,batch_size", INVERSE_FFT_CONFIGS)
+@pytest.mark.parametrize("n_rows,n_cols,batch_size", INVERSE_FFT_CONFIGS)
 @pytest.mark.parametrize("dtype", DATA_TYPES)
-def test_real_fft_c2r_2d(n_rows, n_cols, stride_y, batch_size, dtype):
-    """Test inverse real 2D FFT for specific sizes, stride, batch size, and dtype."""
+def test_real_fft_c2r_2d(n_rows, n_cols, batch_size, dtype):
+    """Test inverse real 2D FFT for specific sizes, batch size, and dtype."""
     for _ in range(NUM_TEST_REPEATS):
         run_inverse_real_fft_2d_test(
             n_rows=n_rows,
             n_cols=n_cols,
-            stride_y=stride_y,
             batch_size=batch_size,
             dtype=dtype,
         )
