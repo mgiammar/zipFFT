@@ -63,12 +63,6 @@ inline void strided_padded_block_fft_c2c_1d_launcher(T* input_data, T* output_da
     // which satisfies the FFT batch size).
     const unsigned int grid_size = (batch_size + FFT::ffts_per_block - 1) / FFT::ffts_per_block;
 
-//     // DEBUGGING: print launch configuration
-//     printf("Launching kernel with grid size: %u, block size: (%u, %u, %u), shared memory size: %u "
-//            "bytes\n",
-//            grid_size, FFT::block_dim.x, FFT::block_dim.y, FFT::block_dim.z,
-//            FFT::shared_memory_size);
-
     // Launch the kernel and ensure no errors afterwards
     kernel_ptr<<<grid_size, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
     CUDA_CHECK_AND_EXIT(cudaPeekAtLastError());
@@ -92,9 +86,9 @@ int strided_padded_block_complex_fft_1d(T* input_data, T* output_data, unsigned 
 #ifdef ENABLE_CUDA_ARCH_870
         case 870: strided_padded_block_fft_c2c_1d_launcher<870, T, SignalLength, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, batch_size); break;
 #endif
-// #ifdef ENABLE_CUDA_ARCH_890
+#ifdef ENABLE_CUDA_ARCH_890
         case 890: strided_padded_block_fft_c2c_1d_launcher<890, T, SignalLength, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, batch_size); break;
-// #endif
+#endif
 #ifdef ENABLE_CUDA_ARCH_900
         case 900: strided_padded_block_fft_c2c_1d_launcher<900, T, SignalLength, FFTSize, Stride, IsForwardFFT, elements_per_thread, FFTs_per_block>(input_data, output_data, batch_size); break;
 #endif
