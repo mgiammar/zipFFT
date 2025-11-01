@@ -47,6 +47,11 @@ try:
 except ImportError:
     padded_rfft2d = None
 
+try:
+    from . import padded_rconv2d
+except ImportError:
+    padded_rconv2d = None
+
 # Load build config if available
 try:
     from .build_config import CUDA_ARCHITECTURES, ENABLED_EXTENSIONS
@@ -82,4 +87,5 @@ __all__ = [
     "strided_padded_cfft1d",
     "rfft2d",
     "padded_rfft2d",
+    "padded_rconv2d",
 ]
