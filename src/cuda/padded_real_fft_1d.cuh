@@ -10,9 +10,9 @@ template <class FFT, class InputLayout, class OutputLayout, unsigned int SignalL
           typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void padded_block_fft_r2c_1d_kernel_with_layout(ScalarType* input_data, 
-                                                     ComplexType* output_data,
-                                                     typename FFT::workspace_type workspace) {
+    void padded_block_fft_r2c_1d_kernel_with_layout(ScalarType* input_data,
+                                                    ComplexType* output_data,
+                                                    typename FFT::workspace_type workspace) {
     using complex_type = ComplexType;
     using scalar_type = ScalarType;
 
@@ -40,8 +40,9 @@ template <class FFT, class InputLayout, class OutputLayout, unsigned int SignalL
           typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void padded_block_fft_c2r_1d_kernel_with_layout(ComplexType* input_data, 
-                                                     ScalarType* output_data) {
+    void padded_block_fft_c2r_1d_kernel_with_layout(ComplexType* input_data,
+                                                    ScalarType* output_data,
+                                                    typename FFT::workspace_type workspace) {
     using complex_type = ComplexType;
     using scalar_type = ScalarType;
 
@@ -58,7 +59,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
-    FFT().execute(thread_data, shared_mem);
+    FFT().execute(thread_data, shared_mem, workspace);
 
     // Store using padded output layout (truncates to SignalLength)
     output_io::store(thread_data, output_data, local_fft_id);
@@ -91,20 +92,23 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* out
     if constexpr (IsForwardFFT) {
         // Forward R2C: padded real input -> full complex output
         // Input layout: (batch, SignalLength) where SignalLength < FFT::input_length
-        using InputLayout = zipfft::index_mapper<
-            zipfft::int_pair<SignalLength, 1>,     // elements contiguous
-            zipfft::int_pair<1, SignalLength>,     // batches strided by SignalLength
-            zipfft::int_pair<0, 0>                 // dummy dimension
-            >;
+        using InputLayout =
+            zipfft::index_mapper<zipfft::int_pair<SignalLength, 1>,  // elements contiguous
+                                 zipfft::int_pair<1, SignalLength>,  // batches strided by
+                                                                     // SignalLength
+                                 zipfft::int_pair<0, 0>              // dummy dimension
+                                 >;
 
         // Output layout: (batch, FFT::output_length) - full complex output
-        using OutputLayout = zipfft::index_mapper<
-            zipfft::int_pair<FFT::output_length, 1>,   // elements contiguous
-            zipfft::int_pair<1, FFT::output_length>,   // batches strided by output_length
-            zipfft::int_pair<0, 0>                     // dummy dimension
-            >;
+        using OutputLayout =
+            zipfft::index_mapper<zipfft::int_pair<FFT::output_length, 1>,  // elements contiguous
+                                 zipfft::int_pair<1, FFT::output_length>,  // batches strided by
+                                                                           // output_length
+                                 zipfft::int_pair<0, 0>                    // dummy dimension
+                                 >;
 
-        auto kernel_ptr = padded_block_fft_r2c_1d_kernel_with_layout<FFT, InputLayout, OutputLayout, SignalLength>;
+        auto kernel_ptr = padded_block_fft_r2c_1d_kernel_with_layout<FFT, InputLayout, OutputLayout,
+                                                                     SignalLength>;
 
         // Increase shared memory size, if needed
         CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
@@ -120,35 +124,45 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* out
         CUDA_CHECK_AND_EXIT(error_code);
 
         // Launch the kernel
-        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t, workspace);
+        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t,
+                                                                   workspace);
     } else {
         // Inverse C2R: full complex input -> padded real output
         // Input layout: (batch, FFT::input_length) - full complex input
-        using InputLayout = zipfft::index_mapper<
-            zipfft::int_pair<FFT::input_length, 1>,    // elements contiguous
-            zipfft::int_pair<1, FFT::input_length>,    // batches strided by input_length
-            zipfft::int_pair<0, 0>                     // dummy dimension
-            >;
+        using InputLayout =
+            zipfft::index_mapper<zipfft::int_pair<FFT::input_length, 1>,  // elements contiguous
+                                 zipfft::int_pair<1, FFT::input_length>,  // batches strided by
+                                                                          // input_length
+                                 zipfft::int_pair<0, 0>                   // dummy dimension
+                                 >;
 
         // Output layout: (batch, SignalLength) where SignalLength < FFT::output_length
-        using OutputLayout = zipfft::index_mapper<
-            zipfft::int_pair<SignalLength, 1>,     // elements contiguous
-            zipfft::int_pair<1, SignalLength>,     // batches strided by SignalLength
-            zipfft::int_pair<0, 0>                 // dummy dimension
-            >;
+        using OutputLayout =
+            zipfft::index_mapper<zipfft::int_pair<SignalLength, 1>,  // elements contiguous
+                                 zipfft::int_pair<1, SignalLength>,  // batches strided by
+                                                                     // SignalLength
+                                 zipfft::int_pair<0, 0>              // dummy dimension
+                                 >;
 
-        auto kernel_ptr = padded_block_fft_c2r_1d_kernel_with_layout<FFT, InputLayout, OutputLayout, SignalLength>;
+        auto kernel_ptr = padded_block_fft_c2r_1d_kernel_with_layout<FFT, InputLayout, OutputLayout,
+                                                                     SignalLength>;
 
         // Increase shared memory size, if needed
         CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
             kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
+
+        // Create workspace for FFT
+        cudaError_t error_code = cudaSuccess;
+        auto workspace = make_workspace<FFT>(error_code);
+        CUDA_CHECK_AND_EXIT(error_code);
 
         // Cast input data to cuFFTDx types
         complex_type* input_data_t = reinterpret_cast<complex_type*>(input_data);
         scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
 
         // Launch the kernel
-        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t,
+                                                                   workspace);
     }
 
     // Ensure no errors afterwards
