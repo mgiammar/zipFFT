@@ -3,7 +3,7 @@
 import warnings
 from typing import List
 
-__version__ = "0.0.2alpha"
+__version__ = "0.0.3alpha"
 
 
 # Try to import each extension

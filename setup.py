@@ -88,6 +88,8 @@ def get_compile_args():
         "-U__CUDA_NO_HALF_CONVERSIONS__",
         "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
         "-U__CUDA_NO_HALF2_OPERATORS__",
+        # Defining macro to disable CUTLASS dependencies in cuFFTDx
+        "-DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY"
     ]
 
     # Add preprocessor definitions for enabled CUDA architectures

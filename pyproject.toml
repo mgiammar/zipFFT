@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zipfft"
-version = "0.0.1a0"
-description = "Python bindings for Zero Implicit Padded (zip) FFT kernels in CUDA."
+version = "0.0.3alpha"
+description = "Python bindings for Zero Implicit Padded (zip) FFT kernels in CUDA/cuFFTDx."
 authors = [{ name = "Matthew Giammar", email = "mdgiammar@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
 
-# # Python package dependencies
-# dependencies = ["numpy", "torch", "pytest"]
+# Python package dependencies
+dependencies = ["numpy", "torch", "pytest", "pyyaml"]
 
 # The package python module in the source directory
 [tool.setuptools.packages.find]

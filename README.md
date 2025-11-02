@@ -1,129 +1,123 @@
 # zipFFT
 Efficient **z**ero **i**mplicitly **p**added (zip) FFT kernels in CUDA/cuFFTDx with a PyTorch interface.
 
+What the zipFFT library is:
+
+* A set of problem-specific CUDA kernels, leveraging cuFFTDx, for image convolution/cross-correlation.
+* Header only, heavily templated implementations for integration with C++/CUDA.
+* A means to accelerate two-dimensional template matching (2DTM) in cryo-EM for particular image shapes/sizes.
+* Python bindings (built with PyTorch) for easy integration into PyTorch-based pipelines.
+
+What the zipFFT library _is not_ (and does not intend to be):
+
+* A general purpose FFT library.
+* A replacement for established libraries like FFTW or cuFFT.
+* A solution for all combinations of convolution/cross-correlation problem shapes/sizes.
+
 ## Rationale
 
 The Discrete Fourier Transform (DFT), and more specifically the Fast Fourier Transform (FFT), is an invaluable algorithm in signal processing.
-One application of these Fourier transforms is FFT-based convolution which brings the computational complexity of a naive convolution from approximately O(N^4) down to O(N^2 log^2 N).
-The FFT also greatly benefits from massively parallel hardware like GPUs, and libraries like cuFFT expose general purpose FFT functionality are used to compute these FFT-based convolutions efficiently on GPU hardware.
+One application of the FFT, which leverages the [convolution theorem](https://en.wikipedia.org/wiki/Convolution_theorem), is to compute convolutions (or cross-correlations) in the frequency domain; the FFT-based convolution brings the complexity down from $O(N^2)$ to $O(N \log N)$ for 1-dimensional signals.
 
-Image processing frequently uses the FFT-based convolution (or cross-correlation) algorithm to compare regions of an image against some filter (kernel).
-While general purpose FFT libraries make implementing these convolution operations relatively easy, there are a handful of scientific computing contexts where hardware utilization (and therefore efficiency) falls short.
-The immediate example the zipFFT package seeks to fill is the case where a large image is being cross-correlated with a relatively small template.
-This is the case for Two-Dimensional Template Matching (2DTM) which is a computational method in cryo-EM ([ref 1](https://elifesciences.org/articles/25648), [ref 2](https://github.com/Lucaslab-Berkeley/Leopard-EM)) which computes millions of these cross-correlations.
-The forward FFT of the smaller template (roughly 256x256 to 512x512) requires zero-padding up to the same shape as the image (~4096x4096), but this necessitates reading in and operating on a large portion of zero values.
-Minimizing the number of trips to/from global memory for these zeros and fusing the point-wise multiplication step(s) with the FFT kernels has the potential to massively speed-up the cross-correlation operations.
+### The problem
 
-By leveraging the cuFFTDx library, we can define and execute zero implicitly padded FFT operations within CUDA kernels including custom load operations to skip reading in zero-padded values.
-We expose these kernels into Python-land through PyTorch linkage meaning these kernels can be executed on data managed by `torch.Tensor` objects, but the kernels and functions are also exposed as header-only CUDA files which can be used in other C++/CUDA files.
-We also include unit test for all the custom cuFFTDx operations against the `pytorch.fft` module (cuFFT on the backend) to ensure accuracy of all of the custom implementations.
+Image processing frequently uses FFT-based convolutions (or cross-correlations) for pattern recognition, and general purpose FFT libraries -- like FFTW and cuFFT -- expose nice APIs for calling FFTs within image analysis pipelines.
+One such pipeline is Two-Dimensional Template Matching (2DTM) in the field of cryo-EM where millions of these cross-correlations are computed to detect protein structures within noisy images of cells ([ref 1](https://elifesciences.org/articles/25648), [ref 2](https://www.biorxiv.org/content/10.1101/2025.08.26.672452v1)).
+However, these general purpose libraries lack the granularity to exploit problem-specific structure to better utilize hardware and improve efficiency.
+In 2DTM, the most obvious structures are 1)  large amount of zero-padding applied when calculating the FFT of a small projection and 2) fusing point-wise multiplications with FFT/IFFT kernels to mask unnecessary global memory reads/writes.
 
+### The solution
 
+The zipFFT library targets this specific problem structure to provide highly efficient kernels for executing these image convolutions/cross-correlations.
+Data is selectively read from global memory, placing zero values into registers when reading from zero-padded regions of the input, through custom load operations, and point-wise multiplications are fused into the FFT/IFFT kernels to avoid unnecessary global memory traffic.
 
-<!-- ## Usage
-
-The following code will execute a basic 1-dimensional complex-to-complex FFT using the zipFFT backend.
-Note that the ordering of imports is important, and that the FFT operates in-place.
-
-```python
-import torch  # !!! NOTE !!! CUDA backend built by PyTorch needs torch imported first!
-from zipfft import zipfft_binding
-
-# Signal size must be in [16, 32, 64, 128, 256, 512, 1024]
-x = torch.rand(512, dtype=torch.complex64, device="cuda")
-zipfft_binding.fft_c2c_1d(x)
-
-# Tensor 'x' now contains the FFT'd values
-print(x)
-``` -->
+These kernels are also exposed into Python-land through PyTorch linkage for easy integration into existing PyTorch-based pipelines.
+This also makes unit testing against the `pytorch.fft` module straightforward to ensure accuracy of all custom implementations.
 
 
 ## Installation
 
-Currently, the zipFFT package requires compilation from source; installation steps may be unstable, but we are looking to improve this in the future.
+The `cuFFTDx` and associated `MathDx` libraries from NVIDIA are still under active development, so the following installation steps may be unstable.
+We currently reocmend using `conda` to manage dependencies between the packages and libaraires, although this may be different on your system.
 
-It's recommended to use conda to manage which versions of CUDA-toolkit, MathDx, and other packages which are necessary.
-Use the following steps to install the package from a fresh conda environment.
+### 1. Create a new conda environment
 
-First, create a fresh conda environment and activate it
+This environemnt will manage all the packages as well as the CUDA toolkit for compilation
+
 ```bash
-conda create -n zipfft python=3.12 -y && conda activate zipfft
+conda create -n zipfft python=3.13 -y && conda activate zipfft
 ```
 
-Next, we use conda to install the required `MathDx` and `cuda-toolkit` library versions.
-MathDx needs to be installed first, otherwise the conda solver will complain about platforms for `cuda-toolkit` (unsure why...).
+### 2. Install the CUDA toolkit package
+
+We have tested zipFFT with CUDA 12.9, but newer versions may be found on the (anaconda)[https://anaconda.org/nvidia/cuda-toolkit] website.
+A different version of CUDA may be installed on your system, and you should update the version accordingly
+
 ```bash
-conda install conda-forge::mathdx
-conda install nvidia/label/cuda-12.8.1::cuda-toolkit
+conda install nvidia/label/cuda-12.9.1::cuda-toolkit
 ```
 
-PyTorch built with CUDA version 12.8 is required to compile the backend functions
+### 3. Install the MathDx/cuFFTDx libraries
+
+Follow the instructions on the [cuFFTDx Download page](https://developer.nvidia.com/cufftdx-downloads) to download and install the `MathDx` and `cuFFTDx` libraries.
+For example downloading the tarball for CUDA 12.x, extracting it, and moving the headers to `$CONDA_PREFIX/include/` would look like:
+
 ```bash
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 PyYAML
+wget https://developer.nvidia.com/downloads/compute/cuFFTDx/redist/cuFFTDx/cuda13/nvidia-mathdx-25.06.1-cuda13.tar.gz
+tar -xzf nvidia-mathdx-*.tar.gz
 ```
 
-The package is then installable from source. Assuming you have cloned and navigated to the repo root directory, run the following to generate the pre-defined FFT implementation files and install the package under the current environment.
+Next, move the include files to the conda environment's include directory
+
 ```bash
-python generate_fft_configs.py
+mv nvidia-mathdx-25.06.1/nvidia/mathdx/25.06/include/* $CONDA_PREFIX/include/
+```
+
+Optionally, remove the rest of the extracted files and tarball
+
+```bash
+rm -rf nvidia-mathdx-25.06.1 nvidia-mathdx-*.tar.gz
+```
+
+### 4. Install necessary PyTorch version and other Python dependencies
+
+```bash
+python -m pip install torch torchvision
+python -m pip install pytest pyyaml
+```
+
+### 5. Run local install
+
+Installation from source is currently the only way to install zipFFT.
+However, all dependencies in the installation process should be automatically managed by zipFFT and conda.
+
+```bash
 pip install -e .
 ```
 
-### Local development
+#### Targeting specific CUDA architectures and modules to speed up compilation
 
-Compilation times can be quite long given the heavily templated nature of the CUDA backend and the cuFFTDx library.
-Ways to speed up this process are currently under development, but the following options are available moderately accelerate builds during development.
-First, a full `pip install` does not need to be when developing; we can bypass `pip`'s mechanisms to allow us to directly pass CLI args into `setup.py` one of which is `cuda-arch [list]` to target only a specific subset of CUDA device architectures.
+Compiling the entire zipFFT package can take a long time because of the heavily templated nature of the code and the additional testing/development specific modules compiled by default.
+Selecting only a specific CUDA architecture and/or a subset of modules to compile can significantly speed up the installation process.
+To select a CUDA architecture, set teh environment variable `CUDA_ARCHITECTURES` to a comma-separated list of architectures before running the installation.
 
 ```bash
-# run this instead of pip install -e .
-python setup.py --cuda-arch "8.9,9.0"  # replace with your archs
+export CUDA_ARCHITECTURES=8.9  # For Ada generation GPUs
 ```
 
-Increasing the max workers for the ninja backend can also help speed up the compilation process.
+Similarly, a subset of modules can be selected by setting the `ENABLED_EXTENSIONS` environment variable to a comma-separated list of module names.
+If you are only interested in the 2D convolution/cross-correlation functions, you can set this variable as follows:
+
 ```bash
-export MAX_JOBS=16  # number of cores
-python setup.py --cuda-arch "8.9,9.0"  # replace with your archs
+export ENABLED_EXTENSIONS=padded_rconv2d
 ```
-<!-- 
-## Further Information and Caveats
 
-### Limitations
+## Running unit tests
 
-* Complex-to-complex FFT functions are executed in-place.
-* Input size/shape needs to be known at compile time, so only common sets of FFT sizes are supported.
-* Input data type also needs to be know at compile time, and no type casting is happening under-the-hood.
+Unit tests can be run through `pytest` after installation.
 
-### Info on backend construction
+```bash
+pytest
+```
 
-The zipFFT backend is heavily templated C++/CUDA code which can be hard to parse at times.
-These template constructions do permit reuse of kernels and launcher functions.
-For example, the `zipfft.zipfft_binding.fft_c2c_1d` just calls one of the template instantiations at the bottom of [`src/cuda/src/cuda/complex_fft_1d.cu`](src/cuda/complex_fft_1d.cu). -->
-<!-- Adding a new compiled FFT size would simply be a new line at the bottom of this file, for example a 2048-point FFT:
-```c++
-// ... existing code
-
-template int block_complex_fft_1d<float2, 512u >(float2* data);
-template int block_complex_fft_1d<float2, 1024u>(float2* data);
-/* new */ template int block_complex_fft_1d<float2, 2048u >(float2* data);
-
-// ... existing code
-``` -->
-
-<!-- Each kernel type (e.g. 1D FFT, 2D FFT, padded FFT kernels) are each contained within their own .cu file and exposed with a header into C++ land.
-There is the script [`generate_fft_configs.py`](generate_fft_configs.py) which auto-generates these template implementations.
-
-Many of the functional headers included in this library come directly from the CUDALibaraySamples repository or have been adapted therefrom. -->
-
-## 🚧 Work in progress 🚧
-
-These are a non-comprehensive, non-guaranteed list of future zipFFT functionality.
-
-* float16/complex32 support
-* float64/complex128 support
-* Real-to-complex and complex-to-real kernels
-* 1D padded FFT kernels
-* 1D convolution (and padded convolution) kernels
-* 2D FFT kernels
-* 2D padded FFT kernels
-* 2D convolution (and padded convolution) kernels
-* Fused maximum cross-correlation kernels
+Any modules which were not compiled during installation (due to `ENABLED_EXTENSIONS` settings) will be skipped during testing.
