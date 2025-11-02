@@ -65,9 +65,9 @@ def run_convolution_2d_test(
     dtype : torch.dtype
         The data type of the input tensor.
     rtol : float
-        Absolute tolerance for comparison.
-    atol : float
         Relative tolerance for comparison.
+    atol : float
+        Absolute tolerance for comparison.
     """
     filter_shape = (signal_length_y, signal_length_x)
     image_shape = (fft_size_y, fft_size_x)
@@ -153,9 +153,9 @@ def run_cross_correlation_2d_test(
     dtype : torch.dtype
         The data type of the input tensor.
     rtol : float
-        Absolute tolerance for comparison.
-    atol : float
         Relative tolerance for comparison.
+    atol : float
+        Absolute tolerance for comparison.
     """
     filter_shape = (signal_length_y, signal_length_x)
     image_shape = (fft_size_y, fft_size_x)
