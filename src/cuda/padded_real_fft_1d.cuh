@@ -151,12 +151,18 @@ inline void padded_block_real_fft_1d_launcher(Input_T* input_data, Output_T* out
         CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
             kernel_ptr, cudaFuncAttributeMaxDynamicSharedMemorySize, FFT::shared_memory_size));
 
+        // Create workspace for FFT
+        cudaError_t error_code = cudaSuccess;
+        auto workspace = make_workspace<FFT>(error_code);
+        CUDA_CHECK_AND_EXIT(error_code);
+
         // Cast input data to cuFFTDx types
         complex_type* input_data_t = reinterpret_cast<complex_type*>(input_data);
         scalar_type* output_data_t = reinterpret_cast<scalar_type*>(output_data);
 
         // Launch the kernel
-        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t);
+        kernel_ptr<<<1, FFT::block_dim, FFT::shared_memory_size>>>(input_data_t, output_data_t,
+                                                                   workspace);
     }
 
     // Ensure no errors afterwards

@@ -32,10 +32,10 @@ try:
 except ImportError:
     strided_cfft1d = None
 
-try:
-    from . import strided_padded_cfft1d
-except ImportError:
-    strided_padded_cfft1d = None
+# try:
+#     from . import strided_padded_cfft1d
+# except ImportError:
+#     strided_padded_cfft1d = None
 
 try:
     from . import rfft2d
@@ -84,7 +84,7 @@ __all__ = [
     "padded_rfft1d",
     "strided_cfft1d",
     "padded_cfft1d",
-    "strided_padded_cfft1d",
+    # "strided_padded_cfft1d",
     "rfft2d",
     "padded_rfft2d",
     "padded_rconv2d",
