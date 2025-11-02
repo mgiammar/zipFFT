@@ -47,35 +47,35 @@ struct PaddedRealConvConfig2D {
 // Define supported convolution configurations
 // Format: (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)
 static constexpr std::array<
-    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 4>
+    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 24>
     SUPPORTED_CONV_CONFIGS = {{
         // Convolution configurations
         {48, 48, 64, 64, 1, false},      // (48, 48) -> (64, 64), batch=1
         {48, 48, 64, 64, 8, false},      // (48, 48) -> (64, 64), batch=8
-        // {96, 96, 128, 128, 1, false},    // (96, 96) -> (128, 128), batch=1
-        // {96, 96, 128, 128, 8, false},    // (96, 96) -> (128, 128), batch=8
-        // {192, 192, 256, 256, 1, false},  // (192, 192) -> (256, 256), batch=1
-        // {192, 192, 256, 256, 4, false},  // (192, 192) -> (256, 256), batch=4
-        // {384, 384, 512, 512, 1, false},  // (384, 384) -> (512, 512), batch=1
-        // {384, 384, 512, 512, 4, false},  // (384, 384) -> (512, 512), batch=4
-        // {384, 192, 512, 256, 1, false},  // (384, 192) -> (512, 256), batch=1
-        // {384, 192, 512, 256, 4, false},  // (384, 192) -> (512, 256), batch=4
-        // {192, 384, 256, 512, 1, false},  // (192, 384) -> (256, 512), batch=1
-        // {192, 384, 256, 512, 4, false},  // (192, 384) -> (256, 512), batch=4
+        {96, 96, 128, 128, 1, false},    // (96, 96) -> (128, 128), batch=1
+        {96, 96, 128, 128, 8, false},    // (96, 96) -> (128, 128), batch=8
+        {192, 192, 256, 256, 1, false},  // (192, 192) -> (256, 256), batch=1
+        {192, 192, 256, 256, 4, false},  // (192, 192) -> (256, 256), batch=4
+        {384, 384, 512, 512, 1, false},  // (384, 384) -> (512, 512), batch=1
+        {384, 384, 512, 512, 4, false},  // (384, 384) -> (512, 512), batch=4
+        {384, 192, 512, 256, 1, false},  // (384, 192) -> (512, 256), batch=1
+        {384, 192, 512, 256, 4, false},  // (384, 192) -> (512, 256), batch=4
+        {192, 384, 256, 512, 1, false},  // (192, 384) -> (256, 512), batch=1
+        {192, 384, 256, 512, 4, false},  // (192, 384) -> (256, 512), batch=4
 
         // Cross-correlation configurations
         {48, 48, 64, 64, 1, true},      // (48, 48) -> (64, 64), batch=1
         {48, 48, 64, 64, 8, true},      // (48, 48) -> (64, 64), batch=8
-        // {96, 96, 128, 128, 1, true},    // (96, 96) -> (128, 128), batch=1
-        // {96, 96, 128, 128, 8, true},    // (96, 96) -> (128, 128), batch=8
-        // {192, 192, 256, 256, 1, true},  // (192, 192) -> (256, 256), batch=1
-        // {192, 192, 256, 256, 4, true},  // (192, 192) -> (256, 256), batch=4
-        // {384, 384, 512, 512, 1, true},  // (384, 384) -> (512, 512), batch=1
-        // {384, 384, 512, 512, 4, true},  // (384, 384) -> (512, 512), batch=4
-        // {384, 192, 512, 256, 1, true},  // (384, 192) -> (512, 256), batch=1
-        // {384, 192, 512, 256, 4, true},  // (384, 192) -> (512, 256), batch=4
-        // {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
-        // {192, 384, 256, 512, 4, true},  // (192, 384) -> (256, 512), batch=4
+        {96, 96, 128, 128, 1, true},    // (96, 96) -> (128, 128), batch=1
+        {96, 96, 128, 128, 8, true},    // (96, 96) -> (128, 128), batch=8
+        {192, 192, 256, 256, 1, true},  // (192, 192) -> (256, 256), batch=1
+        {192, 192, 256, 256, 4, true},  // (192, 192) -> (256, 256), batch=4
+        {384, 384, 512, 512, 1, true},  // (384, 384) -> (512, 512), batch=1
+        {384, 384, 512, 512, 4, true},  // (384, 384) -> (512, 512), batch=4
+        {384, 192, 512, 256, 1, true},  // (384, 192) -> (512, 256), batch=1
+        {384, 192, 512, 256, 4, true},  // (384, 192) -> (512, 256), batch=4
+        {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
+        {192, 384, 256, 512, 4, true},  // (192, 384) -> (256, 512), batch=4
     }};
 
 // Template dispatch functions for each supported configuration
@@ -98,9 +98,9 @@ void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, float2*
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>
 constexpr auto make_padded_conv_dispatch_table(std::index_sequence<Is...>) {
-    return std::array<std::pair<PaddedRealConvConfig2D,
-                                std::function<void(float*, float2*, float2*, float*)>>,
-                      sizeof...(Is)>{
+    return std::array<
+        std::pair<PaddedRealConvConfig2D, std::function<void(float*, float2*, float2*, float*)>>,
+        sizeof...(Is)>{
         {{PaddedRealConvConfig2D{
               std::get<0>(SUPPORTED_CONV_CONFIGS[Is]), std::get<1>(SUPPORTED_CONV_CONFIGS[Is]),
               std::get<2>(SUPPORTED_CONV_CONFIGS[Is]), std::get<3>(SUPPORTED_CONV_CONFIGS[Is]),
@@ -195,8 +195,8 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
     }
 
     // Validate conv_data dimensions (should be 2D, broadcasted across batches)
-    TORCH_CHECK(conv_data.dim() == 2, "Convolution data tensor must be 2D. Got ",
-                conv_data.dim(), "D.");
+    TORCH_CHECK(conv_data.dim() == 2, "Convolution data tensor must be 2D. Got ", conv_data.dim(),
+                "D.");
     TORCH_CHECK(conv_data.size(0) == fft_size_y,
                 "Convolution data first dimension must match fft_size_y");
     TORCH_CHECK(conv_data.size(1) == expected_stride,
@@ -227,7 +227,8 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
                 "Signal length in X dimension cannot exceed FFT size");
 
     float* input_ptr = input.data_ptr<float>();
-    float2* workspace_ptr = reinterpret_cast<float2*>(fft_workspace.data_ptr<c10::complex<float>>());
+    float2* workspace_ptr =
+        reinterpret_cast<float2*>(fft_workspace.data_ptr<c10::complex<float>>());
     float2* conv_ptr = reinterpret_cast<float2*>(conv_data.data_ptr<c10::complex<float>>());
     float* output_ptr = output.data_ptr<float>();
 
@@ -250,9 +251,8 @@ void padded_real_conv_2d(torch::Tensor input, torch::Tensor fft_workspace, torch
 }
 
 // Function to expose to Python - Cross-correlation
-void padded_real_xcorr_2d(torch::Tensor input, torch::Tensor fft_workspace,
-                          torch::Tensor conv_data, torch::Tensor output, int fft_size_y,
-                          int fft_size_x) {
+void padded_real_corr_2d(torch::Tensor input, torch::Tensor fft_workspace, torch::Tensor conv_data,
+                         torch::Tensor output, int fft_size_y, int fft_size_x) {
     padded_real_conv_2d_impl(input, fft_workspace, conv_data, output, fft_size_y, fft_size_x,
                              true);  // Cross-correlation
 }
@@ -260,7 +260,7 @@ void padded_real_xcorr_2d(torch::Tensor input, torch::Tensor fft_workspace,
 PYBIND11_MODULE(padded_rconv2d, m) {  // Name should match in setup.py
     m.doc() = "2D padded real convolution/cross-correlation using cuFFTDx";
     m.def("conv", &padded_real_conv_2d, "2D padded real convolution");
-    m.def("xcorr", &padded_real_xcorr_2d, "2D padded real cross-correlation");
+    m.def("corr", &padded_real_corr_2d, "2D padded real cross-correlation");
     m.def("get_supported_conv_configs", &get_supported_padded_conv_configs,
           "Get list of supported (signal_y, signal_x, fft_y, fft_x, batch_size, cross_correlate) "
           "configurations");

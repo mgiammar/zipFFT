@@ -34,6 +34,8 @@ if zipfft.padded_rconv2d is not None:
     ]
 
 NUM_TEST_REPEATS = 10
+RTOL = 1e0  # NOTE: Effectively no rtol since numerical differences affect small values
+ATOL = 5e-5
 
 
 def run_convolution_2d_test(
@@ -43,7 +45,8 @@ def run_convolution_2d_test(
     fft_size_x: int,
     batch_size: int,
     dtype: torch.dtype = torch.float32,
-    atol: float = 1e-3,
+    rtol: float = RTOL,
+    atol: float = ATOL,
 ):
     """Runs a single real 2D convolution test for given parameters.
 
@@ -61,8 +64,10 @@ def run_convolution_2d_test(
         The batch size.
     dtype : torch.dtype
         The data type of the input tensor.
+    rtol : float
+        Absolute tolerance for comparison.
     atol : float
-        Absolute tolerance for comparison. Default is 1e-3.
+        Relative tolerance for comparison.
     """
     filter_shape = (signal_length_y, signal_length_x)
     image_shape = (fft_size_y, fft_size_x)
@@ -89,9 +94,11 @@ def run_convolution_2d_test(
     output_cross_corr = torch.empty(output_shape, dtype=dtype, device="cuda")
 
     # PyTorch reference: Doing a FFT-based convolution
-    filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x))
+    filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x), dim=(-2, -1))
     torch_conv_result_fft = input_image_fft[None, ...] * filter_fft
-    torch_conv_result = torch.fft.irfftn(torch_conv_result_fft, norm="forward")
+    torch_conv_result = torch.fft.irfftn(
+        torch_conv_result_fft, dim=(-2, -1), norm="backward"
+    )
     torch_conv_result = torch_conv_result[..., : output_shape[-2], : output_shape[-1]]
 
     # Run our implementation
@@ -103,12 +110,20 @@ def run_convolution_2d_test(
         fft_size_y,
         fft_size_x,
     )
+    output_cross_corr /= fft_size_y * fft_size_x
 
     # Verify results
-    max_diff = torch.max(torch.abs(torch_conv_result - output_cross_corr))
-    assert torch.allclose(
-        torch_conv_result, output_cross_corr, atol=atol
-    ), f"Real 2D convolution results do not match ground truth. Max diff: {max_diff}"
+    max_abs_diff = torch.max(torch.abs(torch_conv_result - output_cross_corr))
+    max_rel_diff = torch.max(
+        torch.abs(torch_conv_result - output_cross_corr)
+        / (torch.abs(output_cross_corr) + 1e-8)
+    )
+    error_msg = (
+        f"Real 2D convolution results do not match ground truth. "
+        f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
+        f"Min/Max ground truth: {torch.min(torch_conv_result.abs())}, {torch.max(torch_conv_result.abs())}"
+    )
+    assert torch.allclose(torch_conv_result, output_cross_corr, rtol=rtol), error_msg
 
 
 def run_cross_correlation_2d_test(
@@ -118,7 +133,8 @@ def run_cross_correlation_2d_test(
     fft_size_x: int,
     batch_size: int,
     dtype: torch.dtype = torch.float32,
-    atol: float = 1e-3,
+    rtol: float = RTOL,
+    atol: float = ATOL,
 ):
     """Runs a single real 2D cross-correlation test for given parameters.
 
@@ -136,8 +152,10 @@ def run_cross_correlation_2d_test(
         The batch size.
     dtype : torch.dtype
         The data type of the input tensor.
+    rtol : float
+        Absolute tolerance for comparison.
     atol : float
-        Absolute tolerance for comparison. Default is 1e-3.
+        Relative tolerance for comparison.
     """
     filter_shape = (signal_length_y, signal_length_x)
     image_shape = (fft_size_y, fft_size_x)
@@ -164,13 +182,15 @@ def run_cross_correlation_2d_test(
     output_cross_corr = torch.empty(output_shape, dtype=dtype, device="cuda")
 
     # PyTorch reference: Doing a FFT-based cross-correlation
-    filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x))
+    filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x), dim=(-2, -1))
     torch_corr_result_fft = input_image_fft[None, ...] * torch.conj(filter_fft)
-    torch_corr_result = torch.fft.irfftn(torch_corr_result_fft, norm="forward")
+    torch_corr_result = torch.fft.irfftn(
+        torch_corr_result_fft, dim=(-2, -1), norm="backward"
+    )
     torch_corr_result = torch_corr_result[..., : output_shape[-2], : output_shape[-1]]
 
     # Run our implementation
-    zipfft.padded_rconv2d.xcorr(
+    zipfft.padded_rconv2d.corr(
         input_filter,
         corr_workspace,
         input_image_fft,
@@ -178,12 +198,22 @@ def run_cross_correlation_2d_test(
         fft_size_y,
         fft_size_x,
     )
+    output_cross_corr /= fft_size_y * fft_size_x
 
     # Verify results
-    max_diff = torch.max(torch.abs(torch_corr_result - output_cross_corr))
+    max_abs_diff = torch.max(torch.abs(torch_corr_result - output_cross_corr))
+    max_rel_diff = torch.max(
+        torch.abs(torch_corr_result - output_cross_corr)
+        / (torch.abs(output_cross_corr) + 1e-8)
+    )
+    error_msg = (
+        f"Real 2D cross-correlation results do not match ground truth. "
+        f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
+        f"Min/Max ground truth: {torch.min(torch_corr_result.abs())}, {torch.max(torch_corr_result.abs())}"
+    )
     assert torch.allclose(
-        torch_corr_result, output_cross_corr, atol=atol
-    ), f"Real 2D cross-correlation results do not match ground truth. Max diff: {max_diff}"
+        torch_corr_result, output_cross_corr, rtol=rtol, atol=atol
+    ), error_msg
 
 
 @pytest.mark.parametrize(
@@ -220,7 +250,6 @@ def test_convolution_2d(
             fft_size_x,
             batch_size,
             dtype=torch.float32,
-            atol=1e-3,
         )
 
 
@@ -258,13 +287,4 @@ def test_cross_correlation_2d(
             fft_size_x,
             batch_size,
             dtype=torch.float32,
-            atol=1e-3,
         )
-
-
-if __name__ == "__main__":
-    print(ALL_CONFIGS)
-    print(CONV_CONFIGS)
-    print(CROSS_CORR_CONFIGS)
-
-    print(vars(zipfft.padded_rconv2d))

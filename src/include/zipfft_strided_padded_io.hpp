@@ -106,8 +106,8 @@ struct io_strided_padded_with_layout {
         const unsigned int stride = FFT::stride;
 
         // Decompose global_fft_id for strided access
-        const unsigned int column_id = global_fft_id % dim_size_v<1, OutputIndexMapper>;
-        const unsigned int batch_id = global_fft_id / dim_size_v<1, OutputIndexMapper>;
+        const unsigned int column_id = global_fft_id % Stride;
+        const unsigned int batch_id = global_fft_id / Stride;
 
         constexpr auto inner_loop_limit = sizeof(output_t) / sizeof(IOType);
 

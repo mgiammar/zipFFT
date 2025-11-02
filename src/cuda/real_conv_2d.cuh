@@ -80,52 +80,56 @@ template <class FFT_fwd, class FFT_inv, class InputLayout, class OutputLayout, c
 __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     void strided_padded_block_conv_c2c_2d_kernel_with_layout(
         typename FFT_fwd::value_type* data, typename FFT_fwd::value_type* conv_data,
-        typename FFT_fwd::workspace_type workspace) {
+        typename FFT_fwd::workspace_type workspace_fwd,
+        typename FFT_inv::workspace_type workspace_inv) {
     using complex_type = typename FFT_fwd::value_type;
 
     // TODO: Static assertions to ensure FFT_fwd and FFT_inv are the same
     // except for their direction.
 
-    using input_io = zipfft::io_strided_padded_with_layout<FFT_fwd, InputLayout, OutputLayout,
-                                                           Stride, InputSignalLength>;
-    using output_io = zipfft::io_strided_padded_with_layout<FFT_inv, InputLayout, OutputLayout,
-                                                            Stride, OutputSignalLength>;
-    using conv_io = zipfft::io_strided_with_layout<FFT_fwd, ConvDataLayout, ConvDataLayout, Stride>;
+    /* clang-format off */
+    using input_io =  zipfft::io_strided_padded_with_layout<FFT_fwd, InputLayout,    InputLayout,   Stride,  InputSignalLength>;
+    using output_io = zipfft::io_strided_padded_with_layout<FFT_inv, OutputLayout,   OutputLayout,   Stride, OutputSignalLength>;
+    // using conv_io =   zipfft::io_strided_with_layout<       FFT_fwd, ConvDataLayout, ConvDataLayout, Stride>;
+    /* clang-format on */
+    ConvDataLayout conv_index_mapper;
+
+    const unsigned int local_fft_id = threadIdx.y;
+    const unsigned int apparent_ffts_per_block = input_io::apparent_ffts_per_block;
+    const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+    const unsigned int column_id = global_fft_id % Stride;
 
     // Local array for FFT thread execution
     complex_type thread_data[FFT_fwd::storage_size];
-    const unsigned int local_fft_id = threadIdx.y;
     input_io::load(data, thread_data, local_fft_id);
 
-    // Load convolution data for this thread of the FFT
-    complex_type thread_conv_data[FFT_fwd::storage_size];
-    conv_io::load(conv_data, thread_conv_data, local_fft_id);
-
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
-    FFT_fwd().execute(thread_data, shared_mem, workspace);
+    FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
 
     // Point-wise multiply in the frequency domain
-    for (unsigned int i = 0; i < FFT_fwd::storage_size; ++i) {
-        // If cross-correlating, do conjugate multiply with the conv data
-        if constexpr (CrossCorrelate) {
-            float2 a, b, c;
-            a.x = thread_data[i].x;
-            a.y = thread_data[i].y;
 
-            b.x = thread_conv_data[i].x;
-            b.y = thread_conv_data[i].y;
+#pragma unroll
+    for (unsigned int i = 0; i < FFT_fwd::output_ept; ++i) {
+        const unsigned int elem_id = threadIdx.x + i * FFT_fwd::stride;
+        const unsigned int conv_index = conv_index_mapper(column_id, elem_id, 0);
 
+        const float2 a = reinterpret_cast<float2*>(thread_data)[i];
+        const float2 b = reinterpret_cast<const float2*>(conv_data)[conv_index];
+        float2 c;
+
+        // computing c = a * b       (convolution)
+        // or        c = conj(a) * b (cross-correlation)
+        if (CrossCorrelate) {
+            c.x = a.x * b.x + a.y * b.y;
+            c.y = -a.y * b.x + a.x * b.y;
+        } else {
             c.x = a.x * b.x - a.y * b.y;
             c.y = a.x * b.y + a.y * b.x;
-
-            thread_data[i].x = c.x;
-            thread_data[i].y = c.y;
-        } else {
-            thread_data[i] *= thread_conv_data[i];
         }
+        reinterpret_cast<float2*>(thread_data)[i] = c;
     }
 
-    FFT_inv().execute(thread_data, shared_mem, workspace);
+    FFT_inv().execute(thread_data, shared_mem, workspace_inv);
 
     output_io::store(thread_data, data, local_fft_id);
 }
@@ -209,7 +213,7 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
                              zipfft::int_pair<Batch, FFTSizeY * StrideY>>;
 
     using ConvDataLayout =
-        zipfft::index_mapper<zipfft::int_pair<StrideY, 1>, zipfft::int_pair<FFTSizeY, StrideY>,
+        zipfft::index_mapper<zipfft::int_pair<StrideY, FFTSizeY>, zipfft::int_pair<FFTSizeY, 1>,
                              zipfft::int_pair<Batch, 0>>;  // Broadcast across batches
 
     using InvInputLayoutX =
@@ -224,8 +228,8 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     auto kernel_r2c_x = padded_block_fft_r2c_1d_kernel_with_layout<FFTX_fwd, FwdInputLayoutX,
                                                                    FwdOutputLayoutX, SignalLengthX>;
     auto kernel_c2c_y = strided_padded_block_conv_c2c_2d_kernel_with_layout<
-        FFTY_fwd, FFTY_inv, FwdInputLayoutY, FwdOutputLayoutY, ConvDataLayout, StrideY, FFTSizeY,
-        ValidLengthY, CrossCorrelate>;
+        FFTY_fwd, FFTY_inv, FwdInputLayoutY, FwdOutputLayoutY, ConvDataLayout, StrideY,
+        SignalLengthY, ValidLengthY, CrossCorrelate>;
     auto kernel_c2r_x = padded_block_fft_c2r_2d_kernel_with_layout<FFTX_inv, InvInputLayoutX,
                                                                    InvOutputLayoutX, ValidLengthX>;
 
@@ -242,6 +246,8 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     auto workspace_fwd_x = make_workspace<FFTX_fwd>(workspace_error);
     CUDA_CHECK_AND_EXIT(workspace_error);
     auto workspace_fwd_y = make_workspace<FFTY_fwd>(workspace_error);
+    CUDA_CHECK_AND_EXIT(workspace_error);
+    auto workspace_inv_y = make_workspace<FFTY_inv>(workspace_error);
     CUDA_CHECK_AND_EXIT(workspace_error);
     auto workspace_inv_x = make_workspace<FFTX_inv>(workspace_error);
     CUDA_CHECK_AND_EXIT(workspace_error);
@@ -265,7 +271,7 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
     kernel_c2c_y<<<grid_size_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size>>>(
-        fft_workspace_cast, conv_data_cast, workspace_fwd_y);
+        fft_workspace_cast, conv_data_cast, workspace_fwd_y, workspace_inv_y);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
     kernel_c2r_x<<<grid_size_inv_x, FFTX_inv::block_dim, FFTX_inv::shared_memory_size>>>(
