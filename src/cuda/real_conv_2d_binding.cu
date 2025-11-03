@@ -83,16 +83,10 @@ template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int F
           unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate>
 void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, float2* conv_data,
                                float* output_data) {
-    // Using optimal elements per thread and ffts per block based on FFT sizes
-    constexpr unsigned int elements_per_thread_x = FFTSizeX <= 128 ? 8 : 16;
-    constexpr unsigned int elements_per_thread_y = FFTSizeY <= 128 ? 8 : 16;
-    constexpr unsigned int ffts_per_block_x = 1;
-    constexpr unsigned int ffts_per_block_y = 1;
-
+    // NOTE: Removing the elements_per_thread and ffts_per_block template parameters to use defaults
     padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                              BatchSize, CrossCorrelate, elements_per_thread_x,
-                              elements_per_thread_y, ffts_per_block_x, ffts_per_block_y>(
-        input_data, fft_workspace, conv_data, output_data);
+                              BatchSize, CrossCorrelate>(input_data, fft_workspace, conv_data,
+                                                         output_data);
 }
 
 // Helper template to create dispatch table entries at compile time

@@ -144,10 +144,14 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
  * @tparam Batch - Number of batches
  * @tparam SignalLengthX - Length of the input signal in the X dimension
  * @tparam SignalLengthY - Length of the input signal in the Y dimension
- * @tparam elements_per_thread_x - Number of elements processed per thread in the X dimension
- * @tparam elements_per_thread_y - Number of elements processed per thread in the Y dimension
- * @tparam FFTs_per_block_x - Number of FFTs processed per block in the X dimension
- * @tparam FFTs_per_block_y - Number of FFTs processed per block in the Y dimension
+ * @tparam elements_per_thread_x - Number of elements processed per thread in the X dimension. If 0
+ * then use the cuFFTDx recommended elements per thread value.
+ * @tparam elements_per_thread_y - Number of elements processed per thread in the Y dimension. If 0
+ * then use the cuFFTDx recommended elements per thread value.
+ * @tparam FFTs_per_block_x - Number of FFTs processed per block in the X dimension. If 0 then use
+ * the cuFFTDx recommended FFTs per block value.
+ * @tparam FFTs_per_block_y - Number of FFTs processed per block in the Y dimension. If 0 then use
+ * the cuFFTDx recommended FFTs per block value.
  * @tparam CrossCorrelate - Whether to perform cross-correlation (true) or convolution (false)
  * @param input_data - Pointer to the input data. Assumed to be in row-major order with shape
  * (Batch, SignalLengthY, SignalLengthX)
@@ -160,28 +164,42 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
  */
 template <unsigned int Arch, unsigned int FFTSizeX, unsigned int FFTSizeY, unsigned int Batch,
           unsigned int SignalLengthX, unsigned int SignalLengthY,
-          unsigned int elements_per_thread_x, unsigned int elements_per_thread_y,
-          unsigned int FFTs_per_block_x, unsigned int FFTs_per_block_y, bool CrossCorrelate = false>
+          unsigned int elements_per_thread_x = 0, unsigned int elements_per_thread_y = 0,
+          unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0,
+          bool CrossCorrelate = false>
 inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_workspace,
                                                float2* conv_data, float* output_data) {
     using namespace cufftdx;
 
     // 1. FFT Structures for transforms operating along the X dimension
     using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
-    using FFTX_base = decltype(Block() + Size<FFTSizeX>() + Precision<float>() +
-                               ElementsPerThread<elements_per_thread_x>() +
-                               FFTsPerBlock<FFTs_per_block_x>() + SM<Arch>());
-    using FFTX_fwd = decltype(FFTX_base() + Type<fft_type::r2c>() + real_fft_options() +
-                              Direction<fft_direction::forward>());
-    using FFTX_inv = decltype(FFTX_base() + Type<fft_type::c2r>() + real_fft_options() +
-                              Direction<fft_direction::inverse>());
+    using FFT_minimal = decltype(Block() + Precision<float>() + SM<Arch>());
+    using FFTX_base = decltype(FFT_minimal() + Size<FFTSizeX>());
+    using FFTY_base = decltype(FFT_minimal() + Size<FFTSizeY>() + Type<fft_type::c2c>());
 
-    // 2. FFT Structures for transforms operating along the Y dimension
-    using FFTY_base = decltype(Block() + Size<FFTSizeY>() + Type<fft_type::c2c>() +
-                               Precision<float>() + ElementsPerThread<elements_per_thread_y>() +
-                               FFTsPerBlock<FFTs_per_block_y>() + SM<Arch>());
+    using FFTX_fwd = decltype(FFTX_base() + Type<fft_type::r2c>() + Direction<fft_direction::forward>() + real_fft_options());
+    using FFTX_inv = decltype(FFTX_base() + Type<fft_type::c2r>() + Direction<fft_direction::inverse>() + real_fft_options());
+
     using FFTY_fwd = decltype(FFTY_base() + Direction<fft_direction::forward>());
     using FFTY_inv = decltype(FFTY_base() + Direction<fft_direction::inverse>());
+
+    if constexpr (elements_per_thread_x != 0) {
+        using FFTX_fwd = decltype(FFTX_fwd() + ElementsPerThread<elements_per_thread_x>());
+        using FFTX_inv = decltype(FFTX_inv() + ElementsPerThread<elements_per_thread_x>());
+    }
+    if constexpr (elements_per_thread_y != 0) {
+        using FFTY_fwd = decltype(FFTY_fwd() + ElementsPerThread<elements_per_thread_y>());
+        using FFTY_inv = decltype(FFTY_inv() + ElementsPerThread<elements_per_thread_y>());
+    }
+
+    if constexpr (FFTs_per_block_x != 0) {
+        using FFTX_fwd = decltype(FFTX_fwd() + FFTsPerBlock<FFTs_per_block_x>());
+        using FFTX_inv = decltype(FFTX_inv() + FFTsPerBlock<FFTs_per_block_x>());
+    }
+    if constexpr (FFTs_per_block_y != 0) {
+        using FFTY_fwd = decltype(FFTY_fwd() + FFTsPerBlock<FFTs_per_block_y>());
+        using FFTY_inv = decltype(FFTY_inv() + FFTsPerBlock<FFTs_per_block_y>());
+    }
 
     using complex_type = typename FFTX_fwd::value_type;
     using scalar_type = typename complex_type::value_type;
@@ -285,9 +303,9 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
 // --- Public API Function Template Definition ---
 template <typename ScalarType, typename ComplexType, unsigned int SignalLengthX,
           unsigned int SignalLengthY, unsigned int FFTSizeX, unsigned int FFTSizeY,
-          unsigned int Batch, bool CrossCorrelate, unsigned int elements_per_thread_x,
-          unsigned int elements_per_thread_y, unsigned int FFTs_per_block_x,
-          unsigned int FFTs_per_block_y>
+          unsigned int Batch, bool CrossCorrelate, unsigned int elements_per_thread_x = 0,
+          unsigned int elements_per_thread_y = 0, unsigned int FFTs_per_block_x = 0,
+          unsigned int FFTs_per_block_y = 0>
 int padded_block_real_conv_2d(ScalarType* input_data, ComplexType* fft_workspace,
                               ComplexType* conv_data, ScalarType* output_data) {
     auto arch = zipfft::get_cuda_device_arch();
