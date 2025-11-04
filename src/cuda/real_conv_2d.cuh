@@ -296,8 +296,8 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
         fft_workspace_cast, output_data_cast, workspace_inv_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    // TODO: Remove explicit sync
-    CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+    // // TODO: Remove explicit sync
+    // CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
 }
 
 // --- Public API Function Template Definition ---
