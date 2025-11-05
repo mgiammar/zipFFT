@@ -81,7 +81,7 @@ static constexpr std::array<
 // Template dispatch functions for each supported configuration
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
           unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate>
-void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, float2* conv_data,
+void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, const float2* conv_data,
                                float* output_data) {
     // NOTE: Removing the elements_per_thread and ffts_per_block template parameters to use defaults
     padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
@@ -93,7 +93,7 @@ void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, float2*
 template <std::size_t... Is>
 constexpr auto make_padded_conv_dispatch_table(std::index_sequence<Is...>) {
     return std::array<
-        std::pair<PaddedRealConvConfig2D, std::function<void(float*, float2*, float2*, float*)>>,
+        std::pair<PaddedRealConvConfig2D, std::function<void(float*, float2*, const float2*, float*)>>,
         sizeof...(Is)>{
         {{PaddedRealConvConfig2D{
               std::get<0>(SUPPORTED_CONV_CONFIGS[Is]), std::get<1>(SUPPORTED_CONV_CONFIGS[Is]),
@@ -112,7 +112,7 @@ static const auto padded_conv_dispatch_table =
     make_padded_conv_dispatch_table(std::make_index_sequence<SUPPORTED_CONV_CONFIGS.size()>{});
 
 // Create lookup function with compile-time dispatch table
-std::function<void(float*, float2*, float2*, float*)> get_padded_conv_function(
+std::function<void(float*, float2*, const float2*, float*)> get_padded_conv_function(
     unsigned int signal_length_y, unsigned int signal_length_x, unsigned int fft_size_y,
     unsigned int fft_size_x, unsigned int batch_size, bool cross_correlate) {
     // Find matching configuration
@@ -223,7 +223,7 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
     float* input_ptr = input.data_ptr<float>();
     float2* workspace_ptr =
         reinterpret_cast<float2*>(fft_workspace.data_ptr<c10::complex<float>>());
-    float2* conv_ptr = reinterpret_cast<float2*>(conv_data.data_ptr<c10::complex<float>>());
+    const float2* conv_ptr = reinterpret_cast<const float2*>(conv_data.data_ptr<c10::complex<float>>());
     float* output_ptr = output.data_ptr<float>();
 
     // Use the dispatch table to get the appropriate function

@@ -79,7 +79,7 @@ template <class FFT_fwd, class FFT_inv, class InputLayout, class OutputLayout, c
           bool CrossCorrelate = false>
 __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     void strided_padded_block_conv_c2c_2d_kernel_with_layout(
-        typename FFT_fwd::value_type* data, typename FFT_fwd::value_type* conv_data,
+        typename FFT_fwd::value_type* data, const typename FFT_fwd::value_type* conv_data,
         typename FFT_fwd::workspace_type workspace_fwd,
         typename FFT_inv::workspace_type workspace_inv) {
     using complex_type = typename FFT_fwd::value_type;
@@ -114,7 +114,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         const unsigned int conv_index = conv_index_mapper(column_id, elem_id, 0);
 
         const float2 a = reinterpret_cast<float2*>(thread_data)[i];
-        const float2 b = reinterpret_cast<const float2*>(conv_data)[conv_index];
+        const float2 b = __ldg(&reinterpret_cast<const float2*>(conv_data)[conv_index]);
         float2 c;
 
         // computing c = a * b       (convolution)
@@ -168,7 +168,7 @@ template <unsigned int Arch, unsigned int FFTSizeX, unsigned int FFTSizeY, unsig
           unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0,
           bool CrossCorrelate = false>
 inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_workspace,
-                                               float2* conv_data, float* output_data) {
+                                               const float2* conv_data, float* output_data) {
     using namespace cufftdx;
 
     // 1. FFT Structures for transforms operating along the X dimension
@@ -281,7 +281,7 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     // Cast the input data into cuFFTDx types
     scalar_type* input_data_cast = reinterpret_cast<scalar_type*>(input_data);
     complex_type* fft_workspace_cast = reinterpret_cast<complex_type*>(fft_workspace);
-    complex_type* conv_data_cast = reinterpret_cast<complex_type*>(conv_data);
+    const complex_type* conv_data_cast = reinterpret_cast<const complex_type*>(conv_data);
     scalar_type* output_data_cast = reinterpret_cast<scalar_type*>(output_data);
 
     kernel_r2c_x<<<grid_size_fwd_x, FFTX_fwd::block_dim, FFTX_fwd::shared_memory_size>>>(
@@ -307,7 +307,7 @@ template <typename ScalarType, typename ComplexType, unsigned int SignalLengthX,
           unsigned int elements_per_thread_y = 0, unsigned int FFTs_per_block_x = 0,
           unsigned int FFTs_per_block_y = 0>
 int padded_block_real_conv_2d(ScalarType* input_data, ComplexType* fft_workspace,
-                              ComplexType* conv_data, ScalarType* output_data) {
+                              const ComplexType* conv_data, ScalarType* output_data) {
     auto arch = zipfft::get_cuda_device_arch();
 
     /* clang-format off */
