@@ -2,6 +2,7 @@
 #define ZIPFFT_IO_PADDED_HPP_
 
 #include <cufft.h>
+
 #include <type_traits>
 
 #include "cuda_bf16.h"
@@ -126,7 +127,8 @@ struct io_padded_with_layout {
                     if constexpr (needs_half2_format_conversion) {
                         reinterpret_cast<output_t*>(output)[offset] =
                             __io::convert_to_riri<OutputInRRIILayout>(
-                                reinterpret_cast<const output_t*>(thread_data)[i * inner_loop_limit + j]);
+                                reinterpret_cast<const output_t*>(
+                                    thread_data)[i * inner_loop_limit + j]);
                     } else {
                         reinterpret_cast<IOType*>(output)[offset] =
                             reinterpret_cast<const IOType*>(thread_data)[i * inner_loop_limit + j];
@@ -148,18 +150,19 @@ struct io_padded : public io<FFT> {
     // Define default contiguous memory layouts for padded I/O
     // For input: shape (batch, SignalLength) where SignalLength < FFT::input_length
     using default_input_layout =
-        index_mapper<int_pair<SignalLength, 1>,           // elements contiguous
-                     int_pair<1, SignalLength>,            // FFTs strided by SignalLength
-                     int_pair<1, SignalLength>>;           // batches strided by SignalLength
+        index_mapper<int_pair<SignalLength, 1>,   // elements contiguous
+                     int_pair<1, SignalLength>,   // FFTs strided by SignalLength
+                     int_pair<1, SignalLength>>;  // batches strided by SignalLength
 
     // For output: shape (batch, SignalLength) where SignalLength < FFT::output_length
     using default_output_layout =
-        index_mapper<int_pair<SignalLength, 1>,           // elements contiguous
-                     int_pair<1, SignalLength>,            // FFTs strided by SignalLength
-                     int_pair<1, SignalLength>>;           // batches strided by SignalLength
+        index_mapper<int_pair<SignalLength, 1>,   // elements contiguous
+                     int_pair<1, SignalLength>,   // FFTs strided by SignalLength
+                     int_pair<1, SignalLength>>;  // batches strided by SignalLength
 
     // Delegate to io_padded_with_layout with default layouts
-    using io_impl = io_padded_with_layout<FFT, default_input_layout, default_output_layout, SignalLength>;
+    using io_impl =
+        io_padded_with_layout<FFT, default_input_layout, default_output_layout, SignalLength>;
 
     // Forward type compatibility check
     template <typename RegisterType, typename MemoryType>

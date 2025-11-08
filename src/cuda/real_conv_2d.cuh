@@ -185,8 +185,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     const unsigned int local_fft_id = threadIdx.y;
     const unsigned int apparent_ffts_per_block = input_io::apparent_ffts_per_block;
     const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
-    const unsigned int column_id =
-        ConvDataIsTransposed ? (global_fft_id % FFT_fwd::input_length) : (global_fft_id % Stride);
+    const unsigned int column_id = global_fft_id % Stride;
 
     // Local array for FFT thread execution
     complex_type thread_data[FFT_fwd::storage_size];
@@ -199,7 +198,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
 #pragma unroll
     for (unsigned int i = 0; i < FFT_fwd::output_ept; ++i) {
         const unsigned int elem_id = threadIdx.x + i * FFT_fwd::stride;
-        const unsigned int conv_index = conv_index_mapper(column_id, elem_id, 0);
+        const unsigned int conv_index = conv_index_mapper(elem_id, column_id, 0);
 
         const float2 a = reinterpret_cast<float2*>(thread_data)[i];
         const float2 b = __ldg(&reinterpret_cast<const float2*>(conv_data)[conv_index]);
@@ -374,9 +373,11 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     using ConvDataLayout = std::conditional_t<
         TransposeAxes,
         // zipfft::index_mapper<zipfft::int_pair<FFTSizeY, 1>, zipfft::int_pair<StrideY, FFTSizeY>,
-        zipfft::index_mapper<zipfft::int_pair<StrideY, FFTSizeY>, zipfft::int_pair<FFTSizeY, 1>,
+        zipfft::index_mapper<zipfft::int_pair<FFTSizeY, 1>,  // If pre-transposed, access contig
+                             zipfft::int_pair<StrideY, FFTSizeY>,  // layout of rows here
                              zipfft::int_pair<Batch, 0>>,
-        zipfft::index_mapper<zipfft::int_pair<StrideY, FFTSizeY>, zipfft::int_pair<FFTSizeY, 1>,
+        zipfft::index_mapper<zipfft::int_pair<FFTSizeY, 1>,        // layout of cols here
+                             zipfft::int_pair<StrideY, FFTSizeY>,  // If not, stride across cols
                              zipfft::int_pair<Batch, 0>>>;
 
     // 4. Construct the kernel pointers and associated attributes

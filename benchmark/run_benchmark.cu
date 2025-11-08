@@ -22,6 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <cstring>
 
 #include "../src/cuda/real_conv_2d.cuh"
 #include "../src/include/zipfft_common.hpp"
@@ -47,32 +48,32 @@ constexpr unsigned int FFTSizeY = 4096;
 constexpr unsigned int SignalLengthX = 512;
 constexpr unsigned int SignalLengthY = 512;
 
-constexpr unsigned int BATCH_SIZE = 1;
+constexpr unsigned int BATCH_SIZE = 64;
 constexpr bool CROSS_CORRELATE = true;
 
 // Benchmark parameters
-constexpr int NUM_WARMUP_RUNS = 20;
-constexpr int NUM_TIMING_RUNS = 100;
+constexpr int NUM_WARMUP_RUNS = 5;
+constexpr int NUM_TIMING_RUNS = 15;
 
-// CUDA kernel for random data initialization
-__global__ void init_random_float(float* data, size_t size, unsigned long long seed) {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        curandState state;
-        curand_init(seed, idx, 0, &state);
-        data[idx] = curand_uniform(&state) * 2.0f - 1.0f;  // Range [-1, 1]
-    }
-}
+// // CUDA kernel for random data initialization
+// __global__ void init_random_float(float* data, size_t size, unsigned long long seed) {
+//     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx < size) {
+//         curandState state;
+//         curand_init(seed, idx, 0, &state);
+//         data[idx] = curand_uniform(&state) * 2.0f - 1.0f;  // Range [-1, 1]
+//     }
+// }
 
-__global__ void init_random_complex(float2* data, size_t size, unsigned long long seed) {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        curandState state;
-        curand_init(seed, idx, 0, &state);
-        data[idx].x = curand_uniform(&state) * 2.0f - 1.0f;
-        data[idx].y = curand_uniform(&state) * 2.0f - 1.0f;
-    }
-}
+// __global__ void init_random_complex(float2* data, size_t size, unsigned long long seed) {
+//     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx < size) {
+//         curandState state;
+//         curand_init(seed, idx, 0, &state);
+//         data[idx].x = curand_uniform(&state) * 2.0f - 1.0f;
+//         data[idx].y = curand_uniform(&state) * 2.0f - 1.0f;
+//     }
+// }
 
 // Timing helper class using CUDA events
 class CudaTimer {
@@ -251,7 +252,38 @@ BenchmarkStats compute_stats(const std::vector<float>& times, const WorkTrafficP
     return stats;
 }
 
-int main() {
+// Helper function to transpose a 2D complex array
+void transpose_complex_2d(const float2* input, float2* output, unsigned int rows, unsigned int cols) {
+    std::vector<float2> temp(rows * cols);
+    for (unsigned int i = 0; i < rows; ++i) {
+        for (unsigned int j = 0; j < cols; ++j) {
+            temp[j * rows + i] = input[i * cols + j];
+        }
+    }
+    std::copy(temp.begin(), temp.end(), output);
+}
+
+// Template wrapper to dispatch based on transpose flag
+template<bool UseTranspose>
+int run_convolution(float* d_input, float2* d_workspace, const float2* d_conv, float* d_output) {
+    return padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
+                                     BATCH_SIZE, CROSS_CORRELATE, 0, 0, 0, 0, UseTranspose, UseTranspose>(
+        d_input, d_workspace, d_conv, d_output);
+}
+
+int main(int argc, char** argv) {
+    // Parse command-line arguments
+    bool use_transpose = false;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-transpose") == 0) {
+            use_transpose = true;
+        } else if (strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "--help") == 0) {
+            std::cout << "Usage: " << argv[0] << " [-transpose]\n";
+            std::cout << "  -transpose: Enable transposed workspace and conv data for better memory coalescing\n";
+            return 0;
+        }
+    }
+
     std::cout << "========================================\n";
     std::cout << "2D Real Convolution Benchmark\n";
     std::cout << "========================================\n";
@@ -263,6 +295,7 @@ int main() {
     std::cout << "  Batch size:  " << BATCH_SIZE << "\n";
     std::cout << "  Operation:   " << (CROSS_CORRELATE ? "Cross-correlation" : "Convolution")
               << "\n";
+    std::cout << "  Transpose:   " << (use_transpose ? "Enabled" : "Disabled") << "\n";
     std::cout << "  Warmup runs: " << NUM_WARMUP_RUNS << "\n";
     std::cout << "  Timing runs: " << NUM_TIMING_RUNS << "\n";
     std::cout << "========================================\n\n";
@@ -326,24 +359,40 @@ int main() {
 
     // Initialize with random data
     std::cout << "Initializing random data... " << std::flush;
-    const int threads = 256;
-    {
-        int blocks = (input_size + threads - 1) / threads;
-        init_random_float<<<blocks, threads>>>(d_input, input_size, 12345ULL);
+
+    std::vector<float> h_input(input_size);
+    std::vector<float2> h_workspace(workspace_size);
+    std::vector<float2> h_conv(conv_size);
+    std::vector<float> h_output(output_size);
+
+    // Initialize host buffers with random data
+    std::generate(h_input.begin(), h_input.end(), []() { return rand() / (float)RAND_MAX; });
+    std::generate(h_conv.begin(), h_conv.end(), []() { 
+        return make_float2(rand() / (float)RAND_MAX, rand() / (float)RAND_MAX); 
+    });
+
+    // If transpose is enabled, transpose the conv data
+    if (use_transpose) {
+        std::vector<float2> h_conv_transposed(conv_size);
+        transpose_complex_2d(h_conv.data(), h_conv_transposed.data(), FFTSizeY, StrideY);
+        h_conv = std::move(h_conv_transposed);
     }
-    {
-        int blocks = (conv_size + threads - 1) / threads;
-        init_random_complex<<<blocks, threads>>>(d_conv, conv_size, 67890ULL);
-    }
+
+    // Copy to device
+    CUDA_CHECK_AND_EXIT(cudaMemcpy(d_input, h_input.data(), input_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK_AND_EXIT(cudaMemcpy(d_conv, h_conv.data(), conv_size * sizeof(float2), cudaMemcpyHostToDevice));
     CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+
     std::cout << "Done!\n\n";
 
     // Warmup runs
     std::cout << "Running " << NUM_WARMUP_RUNS << " warmup iterations... " << std::flush;
     for (int i = 0; i < NUM_WARMUP_RUNS; ++i) {
-        padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                                  BATCH_SIZE, CROSS_CORRELATE>(d_input, d_workspace, d_conv,
-                                                               d_output);
+        if (use_transpose) {
+            run_convolution<true>(d_input, d_workspace, d_conv, d_output);
+        } else {
+            run_convolution<false>(d_input, d_workspace, d_conv, d_output);
+        }
     }
     CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
     std::cout << "Done!\n\n";
@@ -355,9 +404,11 @@ int main() {
     // Queue all kernel launches before starting timer to maximize GPU utilization
     timer.start();
     for (int i = 0; i < NUM_TIMING_RUNS; ++i) {
-        padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                                  BATCH_SIZE, CROSS_CORRELATE>(d_input, d_workspace, d_conv,
-                                                               d_output);
+        if (use_transpose) {
+            run_convolution<true>(d_input, d_workspace, d_conv, d_output);
+        } else {
+            run_convolution<false>(d_input, d_workspace, d_conv, d_output);
+        }
     }
     float total_elapsed = timer.stop();
     std::cout << "Done!\n\n";
