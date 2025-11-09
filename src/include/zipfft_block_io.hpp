@@ -166,6 +166,16 @@ struct io_with_layout {
             if (elem_id < FFT::input_length) {
                 const size_t offset = input_layout(elem_id, fft_id, batch_id);
 
+                // /// DEBUGGING: Print the computed offset and values being loaded
+                // const int offset_int = static_cast<int>(offset);
+                // if (blockIdx.x == 0 && threadIdx.y == 0) {
+                //     float2 val = reinterpret_cast<const float2*>(input)[offset];
+                //     printf("Load Offset Calculation - global_fft_id: %u, fft_id: %u, "
+                //            "batch_id: %u, offset: %u\n",
+                //            global_fft_id, fft_id, batch_id, offset_int);
+                //     printf("Loaded Value at offset %u: (%f, %f)\n", offset_int, val.x, val.y);
+                // }
+
                 if constexpr (needs_half2_format_conversion) {
                     reinterpret_cast<input_t*>(thread_data)[i] =
                         __io::convert_to_rrii<InputInRRIILayout>(
@@ -230,51 +240,127 @@ struct io {
     using complex_type = typename FFT::value_type;
     using scalar_type = typename complex_type::value_type;
 
-    static constexpr unsigned int apparent_ffts_per_block =
-        FFT::ffts_per_block / FFT::implicit_type_batching;
+    static constexpr bool this_fft_is_folded =
+        cufftdx::real_fft_mode_of<FFT>::value == cufftdx::real_mode::folded;
 
-    // Define default contiguous memory layouts
-    // Layout: (element_index, batch_index) for input
-    using default_input_layout =
-        index_mapper<int_pair<FFT::input_length, 1>,   // elements contiguous
-                     int_pair<1, FFT::input_length>>;  // batches strided by input_length
-
-    // Layout: (element_index, batch_index) for output
-    using default_output_layout =
-        index_mapper<int_pair<FFT::output_length, 1>,   // elements contiguous
-                     int_pair<1, FFT::output_length>>;  // batches strided by output_length
-
-    // Delegate to io_with_layout with default layouts
-    using io_impl = io_with_layout<FFT, default_input_layout, default_output_layout>;
-
-    // Forward type compatibility check
-    template <typename RegisterType, typename MemoryType>
+    template <typename RegType, typename MemType>
     static constexpr bool is_type_compatible() {
-        return io_impl::template is_type_compatible<RegisterType, MemoryType>();
+        return !CUFFTDX_STD::is_void_v<RegType> && (sizeof(RegType) == sizeof(complex_type)) &&
+               (alignof(RegType) == alignof(complex_type));
     }
 
-    // Forward load/store to implementation with default layouts
-    template <bool InputInRRIILayout = false, typename RegisterType, typename IOType>
-    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
-    load(const IOType* input, RegisterType* thread_data, unsigned int local_fft_id) {
-        io_impl::template load<InputInRRIILayout>(input, thread_data, local_fft_id);
-    }
-
-    template <bool OutputInRRIILayout = false, typename RegisterType, typename IOType>
-    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
-    store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id) {
-        io_impl::template store<OutputInRRIILayout>(thread_data, output, local_fft_id);
-    }
-
-    // Legacy offset functions for compatibility
     static inline __device__ unsigned int input_batch_offset(unsigned int local_fft_id) {
-        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        // Implicit batching is currently mandatory for __half precision, and it forces two
+        // batches of data to be put together into a single complex __half2 value. This makes
+        // it so a "single" batch of complex __half2 values in reality contains 2 batches of
+        // complex __half values. Full reference can be found in documentation:
+        // https://docs.nvidia.com/cuda/cufftdx/api/methods.html#half-precision-implicit-batching
+        unsigned int global_fft_id =
+            blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
         return FFT::input_length * global_fft_id;
     }
 
     static inline __device__ unsigned int output_batch_offset(unsigned int local_fft_id) {
-        unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
+        // See note regarding implicit batching in input_batch_offset
+        unsigned int global_fft_id =
+            blockIdx.x * (FFT::ffts_per_block / FFT::implicit_type_batching) + local_fft_id;
+        // If Fold Optimization is enabled, the real values are packed together
+        // into complex values which decreases the effective size twofold
         return FFT::output_length * global_fft_id;
+    }
+
+    template <unsigned int EPT, typename DataType>
+    static inline __device__ void copy(const DataType* source, DataType* target, unsigned int n) {
+        unsigned int stride = blockDim.x * blockDim.y;
+        unsigned int index = threadIdx.y * blockDim.x + threadIdx.x;
+        for (int i = 0; i < EPT; i++) {
+            if (index < n) {
+                target[index] = source[index];
+            }
+            index += stride;
+        }
+    }
+
+    template <class DataType>
+    static inline __device__ void load_to_smem(const DataType* global, unsigned char* shared) {
+        using input_t = typename FFT::input_type;
+        copy<FFT::input_ept>(reinterpret_cast<const input_t*>(global),
+                             reinterpret_cast<input_t*>(shared), blockDim.y * FFT::input_length);
+        __syncthreads();
+    }
+
+    template <class DataType>
+    static inline __device__ void store_from_smem(const unsigned char* shared, DataType* global) {
+        __syncthreads();
+        using output_t = typename FFT::output_type;
+        copy<FFT::output_ept>(reinterpret_cast<const output_t*>(shared),
+                              reinterpret_cast<output_t*>(global), blockDim.y * FFT::output_length);
+    }
+
+    // If InputInRRIILayout is false, then function assumes that values in input are in RIRI
+    // layout, and before loading them to thread_data they are converted to RRII layout.
+    // Otherwise, if InputInRRIILayout is true, then function assumes values in input are in RRII
+    // layout, and don't need to be converted before loading to thread_data.
+    template <bool InputInRRIILayout = false, typename RegisterType, typename IOType,
+              class LoadOp = zipfft::identity>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    load(const IOType* input, RegisterType* thread_data, unsigned int local_fft_id,
+         LoadOp op = {}) {
+        static constexpr bool needs_half2_format_conversion =
+            cufftdx::type_of<FFT>::value != cufftdx::fft_type::r2c &&
+            std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+        using input_t = typename FFT::input_type;
+
+        // Calculate global offset of FFT batch
+        const unsigned int offset = input_batch_offset(local_fft_id);
+        // Get stride, this shows how elements from batch should be split between threads
+        const unsigned int stride = FFT::stride;
+        unsigned int index = offset + threadIdx.x;
+        for (unsigned int i = 0; i < FFT::input_ept; i++) {
+            if ((i * stride + threadIdx.x) < FFT::input_length) {
+                if constexpr (needs_half2_format_conversion) {
+                    reinterpret_cast<input_t*>(thread_data)[i] =
+                        op(__io::convert_to_rrii<InputInRRIILayout>(
+                            reinterpret_cast<const input_t*>(input)[index]));
+                } else {
+                    reinterpret_cast<input_t*>(thread_data)[i] =
+                        op(reinterpret_cast<const input_t*>(input)[index]);
+                }
+                index += stride;
+            }
+        }
+    }
+
+    // Function assumes that values in thread_data are in RRII layout.
+    // If OutputInRRIILayout is false, values are saved into output in RIRI layout; otherwise - in
+    // RRII.
+    template <bool OutputInRRIILayout = false, typename RegisterType, typename IOType,
+              class StoreOp = zipfft::identity>
+    static inline __device__ CUFFTDX_STD::enable_if_t<is_type_compatible<RegisterType, IOType>()>
+    store(const RegisterType* thread_data, IOType* output, unsigned int local_fft_id,
+          StoreOp op = {}) {
+        static constexpr bool needs_half2_format_conversion =
+            cufftdx::type_of<FFT>::value != cufftdx::fft_type::c2r &&
+            std::is_same_v<IOType, cufftdx::detail::complex<__half2>>;
+        using output_t = typename FFT::output_type;
+
+        const unsigned int offset = output_batch_offset(local_fft_id);
+        const unsigned int stride = FFT::stride;
+        unsigned int index = offset + threadIdx.x;
+
+        for (int i = 0; i < FFT::output_ept; ++i) {
+            if ((i * stride + threadIdx.x) < FFT::output_length) {
+                if constexpr (needs_half2_format_conversion) {
+                    reinterpret_cast<output_t*>(output)[index] =
+                        op(__io::convert_to_riri<OutputInRRIILayout>(
+                            reinterpret_cast<const output_t*>(thread_data)[i]));
+                } else {
+                    reinterpret_cast<output_t*>(output)[index] =
+                        op(reinterpret_cast<const output_t*>(thread_data)[i]);
+                }
+                index += stride;
+            }
+        }
     }
 };
 

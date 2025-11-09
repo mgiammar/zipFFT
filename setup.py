@@ -202,7 +202,7 @@ if "padded_rconv2d" in enabled_extensions:
     padded_real_conv_2d_extension = CUDAExtension(
         name="zipfft.padded_rconv2d",
         sources=["src/cuda/real_conv_2d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
+        include_dirs=[pybind11.get_include(), "/home/mgiammar/git_repositories/CUTLASS-Examples/cutlass/include"],
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(padded_real_conv_2d_extension)

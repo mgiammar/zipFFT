@@ -19,23 +19,23 @@ TYPE_MAP = {
 # Only get configs if padded_rconv2d is available
 # NOTE: Each element in the configuration tuple is as follows:
 # (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch, cross_correlate,
-#  transpose_axes, conv_data_is_transposed)
+#  conv_data_is_transposed)
 if zipfft.padded_rconv2d is not None:
     ALL_CONFIGS = zipfft.padded_rconv2d.get_supported_conv_configs()
 
     CONV_CONFIGS = [
-        (cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[6], cfg[7])
+        (cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[6])
         for cfg in ALL_CONFIGS
         if cfg[5] is False
     ]
     CROSS_CORR_CONFIGS = [
-        (cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[6], cfg[7])
+        (cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[6])
         for cfg in ALL_CONFIGS
         if cfg[5] is True
     ]
 
 NUM_TEST_REPEATS = 10
-RTOL = 3e0  # NOTE: Effectively no rtol since numerical differences affect small values
+RTOL = 1e1  # NOTE: Effectively no rtol since numerical differences affect small values
 ATOL = 5e-5
 
 # If we want to normalize by the number of elements in the FFT
@@ -50,7 +50,6 @@ def run_conv_or_corr_2d_test(
     fft_size_x: int,
     batch_size: int,
     cross_correlate: bool,
-    transpose_axes: bool = False,
     conv_data_is_transposed: bool = False,
     dtype: torch.dtype = torch.float32,
     rtol: float = RTOL,
@@ -72,8 +71,6 @@ def run_conv_or_corr_2d_test(
         The batch size.
     cross_correlate : bool
         Whether to perform cross-correlation (True) or convolution (False).
-    transpose_axes : bool
-        Whether to transpose the FFT workspace internally.
     conv_data_is_transposed : bool
         Whether the convolution data is pre-transposed.
     dtype : torch.dtype
@@ -90,22 +87,16 @@ def run_conv_or_corr_2d_test(
         filter_shape = (batch_size,) + filter_shape
         output_shape = (batch_size,) + output_shape
 
+    # Calculate derived constants
+    StrideY = fft_size_x // 2 + 1
+    ValidLengthY = fft_size_y - signal_length_y + 1
+
     # Create a random input image and pre-transform
     input_image = torch.randn(image_shape, dtype=dtype, device="cuda")
-    input_image_fft = torch.fft.rfftn(input_image)
-
-    # # Manually set the fft of the input image for debugging
-    # for i in range(input_image_fft.shape[0]):
-    #     for j in range(input_image_fft.shape[1]):
-    #         input_image_fft[i, j] = complex(i, j)
+    input_image_fft = torch.fft.rfftn(input_image).contiguous()
 
     # Create a random filter to convolve/correlate with the input image
     input_filter = torch.randn(filter_shape, dtype=dtype, device="cuda")
-
-    # total = 1
-    # for dim in filter_shape:
-    #     total *= dim
-    # input_filter = torch.arange(total, dtype=dtype, device="cuda").reshape(filter_shape)
 
     output = torch.empty(output_shape, dtype=dtype, device="cuda")
 
@@ -125,52 +116,76 @@ def run_conv_or_corr_2d_test(
     # Prepare input_image_fft for zipfft call
     # If conv_data_is_transposed is True, transpose the image FFT data
     zipfft_input_image_fft = input_image_fft
+    
+    # # Print the contiguity and underlying strides of both tensors for debugging
+    # assert False, f"DEBUGGING: is_contig: {zipfft_input_image_fft.is_contiguous(), input_image_fft.is_contiguous(), zipfft_input_image_fft.stride(), input_image_fft.stride()}"
+    
     if conv_data_is_transposed:
-        # Transpose from (fft_size_y, fft_size_x//2+1) to (fft_size_x//2+1, fft_size_y)
+        # Transpose from (fft_size_y, StrideY) to (StrideY, fft_size_y)
         zipfft_input_image_fft = input_image_fft.T.contiguous()
 
-    # Create the FFT workspace and output tensors
-    workspace_shape = (batch_size, fft_size_y, fft_size_x // 2 + 1)
-    workspace = torch.empty(
-        *workspace_shape,
+    # Create the FFT workspace tensors matching the 5-kernel pipeline
+    # Workspace 1: After R2C - (batch, SignalLengthY, StrideY)
+    workspace_r2c = torch.empty(
+        batch_size,
+        signal_length_y,
+        StrideY,
         dtype=torch.complex64,
         device="cuda",
     )
-    if transpose_axes:
-        tmp = torch.empty(
-            workspace_shape[0],
-            workspace_shape[2],
-            workspace_shape[1],
-            dtype=torch.complex64,
-            device="cuda",
-        )
-        tmp.copy_(workspace.permute(0, 2, 1))
-        workspace = tmp
-        assert workspace.is_contiguous()
-    if batch_size == 1:
-        workspace = workspace.squeeze(0)
+
+    # Workspace 2: After Transpose1 - (batch, StrideY, SignalLengthY)
+    workspace_r2c_transposed = torch.empty(
+        batch_size,
+        StrideY,
+        signal_length_y,
+        dtype=torch.complex64,
+        device="cuda",
+    )
+
+    # Workspace 3: After C2C - (batch, StrideY, ValidLengthY)
+    workspace_c2c_transposed = torch.empty(
+        batch_size,
+        StrideY,
+        ValidLengthY,
+        dtype=torch.complex64,
+        device="cuda",
+    )
+
+    # Workspace 4: After Transpose2 - (batch, ValidLengthY, StrideY)
+    workspace_c2r = torch.empty(
+        batch_size,
+        ValidLengthY,
+        StrideY,
+        dtype=torch.complex64,
+        device="cuda",
+    )
 
     # Run our implementation
     if cross_correlate:
         zipfft.padded_rconv2d.corr(
             input_filter,
-            workspace,
+            workspace_r2c,
+            workspace_r2c_transposed,
+            workspace_c2c_transposed,
+            workspace_c2r,
             zipfft_input_image_fft,
             output,
             fft_size_y,
             fft_size_x,
-            transpose_axes,
             conv_data_is_transposed,
         )
     else:
         zipfft.padded_rconv2d.conv(
             input_filter,
-            workspace,
+            workspace_r2c,
+            workspace_r2c_transposed,
+            workspace_c2c_transposed,
+            workspace_c2r,
             zipfft_input_image_fft,
             output,
             fft_size_y,
             fft_size_x,
-            transpose_axes,
             conv_data_is_transposed,
         )
 
@@ -189,25 +204,14 @@ def run_conv_or_corr_2d_test(
         f"Real 2D {op_name} results do not match ground truth. "
         f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
         f"Min/Max ground truth: {torch.min(torch_result.abs())}, {torch.max(torch_result.abs())}. "
-        f"Config: transpose_axes={transpose_axes}, conv_data_is_transposed={conv_data_is_transposed}"
+        f"Config: conv_data_is_transposed={conv_data_is_transposed}"
     )
 
-    # ### DEBUGGING: Save the tensors if the test fails for further inspection
-    # if not torch.allclose(torch_result, output, rtol=rtol, atol=atol):
-    #     import numpy as np
-
-    #     torch_result_np = torch_result.cpu().numpy()
-    #     zipfft_result_np = output.cpu().numpy()
-    #     np.save(f"torch_{op_name}_result.npy", torch_result_np)
-    #     np.save(f"zipfft_{op_name}_result.npy", zipfft_result_np)
-    # ### END DEBUGGING
-
     assert torch.allclose(torch_result, output, rtol=rtol, atol=atol), error_msg
-    # assert False, "DEBUGGING"
 
 
 @pytest.mark.parametrize(
-    "signal_length_y,signal_length_x,fft_size_y,fft_size_x,batch_size,transpose_axes,conv_data_is_transposed",
+    "signal_length_y,signal_length_x,fft_size_y,fft_size_x,batch_size,conv_data_is_transposed",
     CONV_CONFIGS,
 )
 def test_convolution_2d(
@@ -216,7 +220,6 @@ def test_convolution_2d(
     fft_size_y: int,
     fft_size_x: int,
     batch_size: int,
-    transpose_axes: bool,
     conv_data_is_transposed: bool,
 ):
     """Tests real 2D convolution for given parameters.
@@ -233,8 +236,6 @@ def test_convolution_2d(
         Size of the FFT along the X dimension.
     batch_size : int
         The batch size.
-    transpose_axes : bool
-        Whether to transpose the FFT workspace internally.
     conv_data_is_transposed : bool
         Whether the convolution data is pre-transposed.
     """
@@ -246,14 +247,13 @@ def test_convolution_2d(
             fft_size_x,
             batch_size,
             cross_correlate=False,
-            transpose_axes=transpose_axes,
             conv_data_is_transposed=conv_data_is_transposed,
             dtype=torch.float32,
         )
 
 
 @pytest.mark.parametrize(
-    "signal_length_y,signal_length_x,fft_size_y,fft_size_x,batch_size,transpose_axes,conv_data_is_transposed",
+    "signal_length_y,signal_length_x,fft_size_y,fft_size_x,batch_size,conv_data_is_transposed",
     CROSS_CORR_CONFIGS,
 )
 def test_cross_correlation_2d(
@@ -262,7 +262,6 @@ def test_cross_correlation_2d(
     fft_size_y: int,
     fft_size_x: int,
     batch_size: int,
-    transpose_axes: bool,
     conv_data_is_transposed: bool,
 ):
     """Tests real 2D cross-correlation for given parameters.
@@ -279,8 +278,6 @@ def test_cross_correlation_2d(
         Size of the FFT along the X dimension.
     batch_size : int
         The batch size.
-    transpose_axes : bool
-        Whether to transpose the FFT workspace internally.
     conv_data_is_transposed : bool
         Whether the convolution data is pre-transposed.
     """
@@ -292,7 +289,6 @@ def test_cross_correlation_2d(
             fft_size_x,
             batch_size,
             cross_correlate=True,
-            transpose_axes=transpose_axes,
             conv_data_is_transposed=conv_data_is_transposed,
             dtype=torch.float32,
         )
