@@ -16,6 +16,8 @@ TYPE_MAP = {
     "complex64": torch.complex64,
 }
 
+FFT_NORMALIZATION_DIRECTION = "backward"  # Options: 'forward', 'backward', 'ortho'
+
 # Only get configs if padded_rconv2d is available
 # NOTE: Each element in the configuration tuple is as follows:
 # (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch, cross_correlate)
@@ -97,7 +99,7 @@ def run_convolution_2d_test(
     filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x), dim=(-2, -1))
     torch_conv_result_fft = input_image_fft[None, ...] * filter_fft
     torch_conv_result = torch.fft.irfftn(
-        torch_conv_result_fft, dim=(-2, -1), norm="forward"
+        torch_conv_result_fft, dim=(-2, -1), norm=FFT_NORMALIZATION_DIRECTION
     )
     torch_conv_result = torch_conv_result[..., : output_shape[-2], : output_shape[-1]]
 
@@ -110,7 +112,9 @@ def run_convolution_2d_test(
         fft_size_y,
         fft_size_x,
     )
-    # output_cross_corr /= fft_size_y * fft_size_x  # For 'backward' normalization
+
+    if FFT_NORMALIZATION_DIRECTION == "backward":
+        output_cross_corr /= fft_size_y * fft_size_x  # For 'backward' normalization
 
     # Verify results
     max_abs_diff = torch.max(torch.abs(torch_conv_result - output_cross_corr))
@@ -123,6 +127,7 @@ def run_convolution_2d_test(
         f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
         f"Min/Max ground truth: {torch.min(torch_conv_result.abs())}, {torch.max(torch_conv_result.abs())}"
     )
+
     assert torch.allclose(torch_conv_result, output_cross_corr, rtol=rtol), error_msg
 
 
@@ -185,7 +190,7 @@ def run_cross_correlation_2d_test(
     filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x), dim=(-2, -1))
     torch_corr_result_fft = input_image_fft[None, ...] * torch.conj(filter_fft)
     torch_corr_result = torch.fft.irfftn(
-        torch_corr_result_fft, dim=(-2, -1), norm="forward"
+        torch_corr_result_fft, dim=(-2, -1), norm=FFT_NORMALIZATION_DIRECTION
     )
     torch_corr_result = torch_corr_result[..., : output_shape[-2], : output_shape[-1]]
 
@@ -198,7 +203,9 @@ def run_cross_correlation_2d_test(
         fft_size_y,
         fft_size_x,
     )
-    # output_cross_corr /= fft_size_y * fft_size_x  # For 'backward' normalization
+
+    if FFT_NORMALIZATION_DIRECTION == "backward":
+        output_cross_corr /= fft_size_y * fft_size_x  # For 'backward' normalization
 
     # Verify results
     max_abs_diff = torch.max(torch.abs(torch_corr_result - output_cross_corr))
@@ -211,6 +218,16 @@ def run_cross_correlation_2d_test(
         f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
         f"Min/Max ground truth: {torch.min(torch_corr_result.abs())}, {torch.max(torch_corr_result.abs())}"
     )
+
+    if not torch.allclose(torch_corr_result, output_cross_corr, rtol=rtol, atol=atol):
+        ### DEBUGGING: Save the tensors to disk (as ndarrays) for further analysis
+        import numpy as np
+
+        np.save("debug_input_image.npy", input_image.cpu().numpy())
+        np.save("debug_input_filter.npy", input_filter.cpu().numpy())
+        np.save("debug_torch_corr_result.npy", torch_corr_result.cpu().numpy())
+        np.save("debug_output_cross_corr.npy", output_cross_corr.cpu().numpy())
+
     assert torch.allclose(
         torch_corr_result, output_cross_corr, rtol=rtol, atol=atol
     ), error_msg

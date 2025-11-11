@@ -47,9 +47,9 @@ struct PaddedRealConvConfig2D {
 // Define supported convolution configurations
 // Format: (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)
 static constexpr std::array<
-    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 24>
+    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 33>
     SUPPORTED_CONV_CONFIGS = {{
-        // Convolution configurations
+        // Convolution configurations (TEST CONFIGURATIONS)
         {48, 48, 64, 64, 1, false},      // (48, 48) -> (64, 64), batch=1
         {48, 48, 64, 64, 8, false},      // (48, 48) -> (64, 64), batch=8
         {96, 96, 128, 128, 1, false},    // (96, 96) -> (128, 128), batch=1
@@ -63,7 +63,7 @@ static constexpr std::array<
         {192, 384, 256, 512, 1, false},  // (192, 384) -> (256, 512), batch=1
         {192, 384, 256, 512, 4, false},  // (192, 384) -> (256, 512), batch=4
 
-        // Cross-correlation configurations
+        // Cross-correlation configurations (TEST CONFIGURATIONS)
         {48, 48, 64, 64, 1, true},      // (48, 48) -> (64, 64), batch=1
         {48, 48, 64, 64, 8, true},      // (48, 48) -> (64, 64), batch=8
         {96, 96, 128, 128, 1, true},    // (96, 96) -> (128, 128), batch=1
@@ -76,6 +76,17 @@ static constexpr std::array<
         {384, 192, 512, 256, 4, true},  // (384, 192) -> (512, 256), batch=4
         {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
         {192, 384, 256, 512, 4, true},  // (192, 384) -> (256, 512), batch=4
+
+        // Cross-correlation for Falcon 4i images (4096x4096)
+        {512, 512, 4096, 4096, 1, true},   // (512, 512) -> (4096, 4096), batch=1
+        {512, 512, 4096, 4096, 4, true},   // (512, 512) -> (4096, 4096), batch=4
+        {512, 512, 4096, 4096, 8, true},   // (512, 512) -> (4096, 4096), batch=8
+        {512, 512, 4096, 4096, 12, true},  // (512, 512) -> (4096, 4096), batch=12
+        {512, 512, 4096, 4096, 16, true},  // (512, 512) -> (4096, 4096), batch=16
+        {512, 512, 4096, 4096, 20, true},  // (512, 512) -> (4096, 4096), batch=20
+        {512, 512, 4096, 4096, 24, true},  // (512, 512) -> (4096, 4096), batch=24
+        {512, 512, 4096, 4096, 28, true},  // (512, 512) -> (4096, 4096), batch=28
+        {512, 512, 4096, 4096, 32, true},  // (512, 512) -> (4096, 4096), batch=32
     }};
 
 // Template dispatch functions for each supported configuration
@@ -92,9 +103,9 @@ void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, const f
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>
 constexpr auto make_padded_conv_dispatch_table(std::index_sequence<Is...>) {
-    return std::array<
-        std::pair<PaddedRealConvConfig2D, std::function<void(float*, float2*, const float2*, float*)>>,
-        sizeof...(Is)>{
+    return std::array<std::pair<PaddedRealConvConfig2D,
+                                std::function<void(float*, float2*, const float2*, float*)>>,
+                      sizeof...(Is)>{
         {{PaddedRealConvConfig2D{
               std::get<0>(SUPPORTED_CONV_CONFIGS[Is]), std::get<1>(SUPPORTED_CONV_CONFIGS[Is]),
               std::get<2>(SUPPORTED_CONV_CONFIGS[Is]), std::get<3>(SUPPORTED_CONV_CONFIGS[Is]),
@@ -223,7 +234,8 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
     float* input_ptr = input.data_ptr<float>();
     float2* workspace_ptr =
         reinterpret_cast<float2*>(fft_workspace.data_ptr<c10::complex<float>>());
-    const float2* conv_ptr = reinterpret_cast<const float2*>(conv_data.data_ptr<c10::complex<float>>());
+    const float2* conv_ptr =
+        reinterpret_cast<const float2*>(conv_data.data_ptr<c10::complex<float>>());
     float* output_ptr = output.data_ptr<float>();
 
     // Use the dispatch table to get the appropriate function
