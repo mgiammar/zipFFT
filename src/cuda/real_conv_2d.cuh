@@ -171,35 +171,51 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
                                                const float2* conv_data, float* output_data) {
     using namespace cufftdx;
 
-    // 1. FFT Structures for transforms operating along the X dimension
+    // 1. FFT Structure Definitions
     using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
     using FFT_minimal = decltype(Block() + Precision<float>() + SM<Arch>());
     using FFTX_base = decltype(FFT_minimal() + Size<FFTSizeX>());
     using FFTY_base = decltype(FFT_minimal() + Size<FFTSizeY>() + Type<fft_type::c2c>());
 
-    using FFTX_fwd = decltype(FFTX_base() + Type<fft_type::r2c>() + Direction<fft_direction::forward>() + real_fft_options());
-    using FFTX_inv = decltype(FFTX_base() + Type<fft_type::c2r>() + Direction<fft_direction::inverse>() + real_fft_options());
+    using FFTX_fwd_base = decltype(FFTX_base() + Type<fft_type::r2c>() +
+                                   Direction<fft_direction::forward>() + real_fft_options());
+    using FFTX_inv_base = decltype(FFTX_base() + Type<fft_type::c2r>() +
+                                   Direction<fft_direction::inverse>() + real_fft_options());
 
-    using FFTY_fwd = decltype(FFTY_base() + Direction<fft_direction::forward>());
-    using FFTY_inv = decltype(FFTY_base() + Direction<fft_direction::inverse>());
+    using FFTY_fwd_base = decltype(FFTY_base() + Direction<fft_direction::forward>());
+    using FFTY_inv_base = decltype(FFTY_base() + Direction<fft_direction::inverse>());
 
-    if constexpr (elements_per_thread_x != 0) {
-        using FFTX_fwd = decltype(FFTX_fwd() + ElementsPerThread<elements_per_thread_x>());
-        using FFTX_inv = decltype(FFTX_inv() + ElementsPerThread<elements_per_thread_x>());
-    }
-    if constexpr (elements_per_thread_y != 0) {
-        using FFTY_fwd = decltype(FFTY_fwd() + ElementsPerThread<elements_per_thread_y>());
-        using FFTY_inv = decltype(FFTY_inv() + ElementsPerThread<elements_per_thread_y>());
-    }
+    // Apply optional elements per thread
+    using FFTX_fwd_ept =
+        std::conditional_t<elements_per_thread_x != 0,
+                           decltype(FFTX_fwd_base() + ElementsPerThread<elements_per_thread_x>()),
+                           FFTX_fwd_base>;
+    using FFTX_inv_ept =
+        std::conditional_t<elements_per_thread_x != 0,
+                           decltype(FFTX_inv_base() + ElementsPerThread<elements_per_thread_x>()),
+                           FFTX_inv_base>;
+    using FFTY_fwd_ept =
+        std::conditional_t<elements_per_thread_y != 0,
+                           decltype(FFTY_fwd_base() + ElementsPerThread<elements_per_thread_y>()),
+                           FFTY_fwd_base>;
+    using FFTY_inv_ept =
+        std::conditional_t<elements_per_thread_y != 0,
+                           decltype(FFTY_inv_base() + ElementsPerThread<elements_per_thread_y>()),
+                           FFTY_inv_base>;
 
-    if constexpr (FFTs_per_block_x != 0) {
-        using FFTX_fwd = decltype(FFTX_fwd() + FFTsPerBlock<FFTs_per_block_x>());
-        using FFTX_inv = decltype(FFTX_inv() + FFTsPerBlock<FFTs_per_block_x>());
-    }
-    if constexpr (FFTs_per_block_y != 0) {
-        using FFTY_fwd = decltype(FFTY_fwd() + FFTsPerBlock<FFTs_per_block_y>());
-        using FFTY_inv = decltype(FFTY_inv() + FFTsPerBlock<FFTs_per_block_y>());
-    }
+    // Apply optional FFTs per block
+    using FFTX_fwd = std::conditional_t<FFTs_per_block_x != 0,
+                                        decltype(FFTX_fwd_ept() + FFTsPerBlock<FFTs_per_block_x>()),
+                                        FFTX_fwd_ept>;
+    using FFTX_inv = std::conditional_t<FFTs_per_block_x != 0,
+                                        decltype(FFTX_inv_ept() + FFTsPerBlock<FFTs_per_block_x>()),
+                                        FFTX_inv_ept>;
+    using FFTY_fwd = std::conditional_t<FFTs_per_block_y != 0,
+                                        decltype(FFTY_fwd_ept() + FFTsPerBlock<FFTs_per_block_y>()),
+                                        FFTY_fwd_ept>;
+    using FFTY_inv = std::conditional_t<FFTs_per_block_y != 0,
+                                        decltype(FFTY_inv_ept() + FFTsPerBlock<FFTs_per_block_y>()),
+                                        FFTY_inv_ept>;
 
     using complex_type = typename FFTX_fwd::value_type;
     using scalar_type = typename complex_type::value_type;
