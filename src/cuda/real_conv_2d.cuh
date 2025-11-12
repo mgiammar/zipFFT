@@ -136,7 +136,10 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
 
 // --- Convolution/Cross-correlation 2D FFT Launcher ---
 /**
- * @brief Launcher function for the 3-kernel padded real 2D convolution/cross-correlation
+ * @brief Launcher function for the 3-kernel padded real 2D convolution/cross-correlation. This
+ * implementation uses a global memory workspace to communicate results between each of the
+ * kernels (which operate along different dimensions). The function also sets the CUDA device
+ * and stream for execution from function parameters.
  *
  * @tparam Arch - CUDA Architecture specifier for cuFFTDx
  * @tparam FFTSizeX - FFT size in the X dimension
@@ -153,6 +156,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
  * @tparam FFTs_per_block_y - Number of FFTs processed per block in the Y dimension. If 0 then use
  * the cuFFTDx recommended FFTs per block value.
  * @tparam CrossCorrelate - Whether to perform cross-correlation (true) or convolution (false)
+ *
  * @param input_data - Pointer to the input data. Assumed to be in row-major order with shape
  * (Batch, SignalLengthY, SignalLengthX)
  * @param fft_workspace - Pointer to the FFT workspace (complex type). Assumed to be in row-major
@@ -161,6 +165,8 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
  * (1, FFTSizeY, FFTSizeX / 2 + 1)
  * @param output_data - Pointer to the output data. Assumed to be in row-major order with shape
  * (Batch, FFTSizeY - SignalLengthY + 1, FFTSizeX - SignalLengthX + 1)
+ * @param device - CUDA device ID to set for execution
+ * @param stream - CUDA stream to set for execution
  */
 template <unsigned int Arch, unsigned int FFTSizeX, unsigned int FFTSizeY, unsigned int Batch,
           unsigned int SignalLengthX, unsigned int SignalLengthY,
@@ -168,8 +174,12 @@ template <unsigned int Arch, unsigned int FFTSizeX, unsigned int FFTSizeY, unsig
           unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0,
           bool CrossCorrelate = false>
 inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_workspace,
-                                               const float2* conv_data, float* output_data) {
+                                               const float2* conv_data, float* output_data,
+                                               int device, cudaStream_t stream) {
     using namespace cufftdx;
+
+    // 0. Set device
+    CUDA_CHECK_AND_EXIT(cudaSetDevice(device));
 
     // 1. FFT Structure Definitions
     using real_fft_options = RealFFTOptions<complex_layout::natural, real_mode::folded>;
@@ -300,15 +310,15 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     const complex_type* conv_data_cast = reinterpret_cast<const complex_type*>(conv_data);
     scalar_type* output_data_cast = reinterpret_cast<scalar_type*>(output_data);
 
-    kernel_r2c_x<<<grid_size_fwd_x, FFTX_fwd::block_dim, FFTX_fwd::shared_memory_size>>>(
+    kernel_r2c_x<<<grid_size_fwd_x, FFTX_fwd::block_dim, FFTX_fwd::shared_memory_size, stream>>>(
         input_data_cast, fft_workspace_cast, workspace_fwd_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    kernel_c2c_y<<<grid_size_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size>>>(
+    kernel_c2c_y<<<grid_size_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size, stream>>>(
         fft_workspace_cast, conv_data_cast, workspace_fwd_y, workspace_inv_y);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    kernel_c2r_x<<<grid_size_inv_x, FFTX_inv::block_dim, FFTX_inv::shared_memory_size>>>(
+    kernel_c2r_x<<<grid_size_inv_x, FFTX_inv::block_dim, FFTX_inv::shared_memory_size, stream>>>(
         fft_workspace_cast, output_data_cast, workspace_inv_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
@@ -323,28 +333,29 @@ template <typename ScalarType, typename ComplexType, unsigned int SignalLengthX,
           unsigned int elements_per_thread_y = 0, unsigned int FFTs_per_block_x = 0,
           unsigned int FFTs_per_block_y = 0>
 int padded_block_real_conv_2d(ScalarType* input_data, ComplexType* fft_workspace,
-                              const ComplexType* conv_data, ScalarType* output_data) {
+                              const ComplexType* conv_data, ScalarType* output_data, int device,
+                              cudaStream_t stream) {
     auto arch = zipfft::get_cuda_device_arch();
 
     /* clang-format off */
     switch (arch) {
 #ifdef ENABLE_CUDA_ARCH_800
-        case 800: padded_block_real_conv_2d_launcher<800, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 800: padded_block_real_conv_2d_launcher<800, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_860
-        case 860: padded_block_real_conv_2d_launcher<860, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 860: padded_block_real_conv_2d_launcher<860, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_870
-        case 870: padded_block_real_conv_2d_launcher<870, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 870: padded_block_real_conv_2d_launcher<870, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_890
-        case 890: padded_block_real_conv_2d_launcher<890, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 890: padded_block_real_conv_2d_launcher<890, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_900
-        case 900: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 900: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
-        case 1200: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data); break;
+        case 1200: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch

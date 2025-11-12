@@ -50,6 +50,7 @@ def run_conv_or_corr_2d_test(
     dtype: torch.dtype = torch.float32,
     rtol: float = RTOL,
     atol: float = ATOL,
+    device: str | torch.device = "cuda:0",
 ):
     """Runs a single real 2D convolution or cross-correlation test for given parameters.
 
@@ -85,11 +86,11 @@ def run_conv_or_corr_2d_test(
     StrideY = fft_size_x // 2 + 1
 
     # Create a random input image and pre-transform
-    input_image = torch.randn(image_shape, dtype=dtype, device="cuda")
+    input_image = torch.randn(image_shape, dtype=dtype, device=device)
     input_image_fft = torch.fft.rfftn(input_image).contiguous()
 
     # Create a random filter to convolve/correlate with the input image
-    input_filter = torch.randn(filter_shape, dtype=dtype, device="cuda")
+    input_filter = torch.randn(filter_shape, dtype=dtype, device=device)
 
     # Create the FFT workspace tensor
     # Shape: (batch, fft_size_y, fft_size_x // 2 + 1) matching the binding expectations
@@ -97,14 +98,14 @@ def run_conv_or_corr_2d_test(
         workspace_shape = (batch_size, fft_size_y, StrideY)
     else:
         workspace_shape = (fft_size_y, StrideY)
-    
+
     fft_workspace = torch.empty(
         workspace_shape,
         dtype=torch.complex64,
-        device="cuda",
+        device=device,
     )
 
-    output = torch.empty(output_shape, dtype=dtype, device="cuda")
+    output = torch.empty(output_shape, dtype=dtype, device=device)
 
     # PyTorch reference: Doing a FFT-based convolution or cross-correlation
     filter_fft = torch.fft.rfftn(input_filter, s=(fft_size_y, fft_size_x), dim=(-2, -1))
@@ -120,14 +121,13 @@ def run_conv_or_corr_2d_test(
         torch_result_fft, dim=(-2, -1), norm=FFT_NORMALIZATION_DIRECTION
     )
     torch_result = torch_result[..., : output_shape[-2], : output_shape[-1]]
-    
+
     # Transpose the 'input_image_fft' along last two dimensions into contiguous layout
     # with shape (..., fft_size_x // 2 + 1, fft_size_y)
     input_image_fft = input_image_fft.transpose(-2, -1).contiguous()
     # print("input_image_fft shape after transpose:", input_image_fft.shape)
     # print("input_image_fft stride after transpose:", input_image_fft.stride())
     # print("input_image_fft is contiguous:", input_image_fft.is_contiguous())
-
 
     # Run our implementation
     if cross_correlate:
@@ -152,6 +152,9 @@ def run_conv_or_corr_2d_test(
     if FFT_NORMALIZATION_DIRECTION == "backward":
         output /= fft_size_y * fft_size_x  # For 'backward' normalization
 
+    # Synchronize to ensure all operations are complete
+    torch.cuda.synchronize()
+
     # Verify results
     max_abs_diff = torch.max(torch.abs(torch_result - output))
     max_rel_diff = torch.max(
@@ -164,15 +167,6 @@ def run_conv_or_corr_2d_test(
         f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
         f"Min/Max ground truth: {torch.min(torch_result.abs())}, {torch.max(torch_result.abs())}."
     )
-
-    # if not torch.allclose(torch_result, output, rtol=rtol, atol=atol):
-    #     ### DEBUGGING: Save the tensors to disk (as ndarrays) for further analysis
-    #     import numpy as np
-
-    #     np.save("debug_input_image.npy", input_image.cpu().numpy())
-    #     np.save("debug_input_filter.npy", input_filter.cpu().numpy())
-    #     np.save("debug_torch_result.npy", torch_result.cpu().numpy())
-    #     np.save("debug_output.npy", output.cpu().numpy())
 
     # For small sizes (fft_size <= 512) use allclose check, but for larger transforms,
     # check the L2 norm instead to avoid failures due to implementation differences
@@ -256,4 +250,63 @@ def test_cross_correlation_2d(
             batch_size,
             cross_correlate=True,
             dtype=torch.float32,
+        )
+
+
+def test_non_standard_stream():
+    """Tests execution on the non-default CUDA stream"""
+    stream = torch.cuda.Stream()
+
+    # Get the params for the zeroth convolution config
+    (
+        signal_length_y,
+        signal_length_x,
+        fft_size_y,
+        fft_size_x,
+        batch_size,
+    ) = CONV_CONFIGS[0]
+
+    for _ in range(NUM_TEST_REPEATS):
+        with torch.cuda.stream(stream):
+            run_conv_or_corr_2d_test(
+                signal_length_y,
+                signal_length_x,
+                fft_size_y,
+                fft_size_x,
+                batch_size,
+                cross_correlate=False,
+                dtype=torch.float32,
+            )
+
+    # Synchronize to ensure all operations are complete
+    stream.synchronize()
+
+
+@pytest.mark.skipif(
+    torch.cuda.device_count() < 2,
+    reason="Less than 2 CUDA devices available",
+)
+def test_non_standard_device():
+    """Tests execution of a single configuration on the non-zero device"""
+    device = "cuda:1"
+
+    # Get the params for the zeroth cross-correlation config
+    (
+        signal_length_y,
+        signal_length_x,
+        fft_size_y,
+        fft_size_x,
+        batch_size,
+    ) = CROSS_CORR_CONFIGS[0]
+
+    for _ in range(NUM_TEST_REPEATS):
+        run_conv_or_corr_2d_test(
+            signal_length_y,
+            signal_length_x,
+            fft_size_y,
+            fft_size_x,
+            batch_size,
+            cross_correlate=True,
+            dtype=torch.float32,
+            device=device,
         )

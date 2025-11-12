@@ -10,6 +10,8 @@
  * Date:    01 November 2025
  */
 
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
 #include <c10/util/complex.h>
 #include <pybind11/pybind11.h>
 #include <stdio.h>
@@ -93,19 +95,20 @@ static constexpr std::array<
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
           unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate>
 void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, const float2* conv_data,
-                               float* output_data) {
+                               float* output_data, int device_index, cudaStream_t stream) {
     // NOTE: Removing the elements_per_thread and ffts_per_block template parameters to use defaults
     padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
                               BatchSize, CrossCorrelate>(input_data, fft_workspace, conv_data,
-                                                         output_data);
+                                                         output_data, device_index, stream);
 }
 
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>
 constexpr auto make_padded_conv_dispatch_table(std::index_sequence<Is...>) {
-    return std::array<std::pair<PaddedRealConvConfig2D,
-                                std::function<void(float*, float2*, const float2*, float*)>>,
-                      sizeof...(Is)>{
+    return std::array<
+        std::pair<PaddedRealConvConfig2D,
+                  std::function<void(float*, float2*, const float2*, float*, int, cudaStream_t)>>,
+        sizeof...(Is)>{
         {{PaddedRealConvConfig2D{
               std::get<0>(SUPPORTED_CONV_CONFIGS[Is]), std::get<1>(SUPPORTED_CONV_CONFIGS[Is]),
               std::get<2>(SUPPORTED_CONV_CONFIGS[Is]), std::get<3>(SUPPORTED_CONV_CONFIGS[Is]),
@@ -123,9 +126,10 @@ static const auto padded_conv_dispatch_table =
     make_padded_conv_dispatch_table(std::make_index_sequence<SUPPORTED_CONV_CONFIGS.size()>{});
 
 // Create lookup function with compile-time dispatch table
-std::function<void(float*, float2*, const float2*, float*)> get_padded_conv_function(
-    unsigned int signal_length_y, unsigned int signal_length_x, unsigned int fft_size_y,
-    unsigned int fft_size_x, unsigned int batch_size, bool cross_correlate) {
+std::function<void(float*, float2*, const float2*, float*, int, cudaStream_t)>
+get_padded_conv_function(unsigned int signal_length_y, unsigned int signal_length_x,
+                         unsigned int fft_size_y, unsigned int fft_size_x, unsigned int batch_size,
+                         bool cross_correlate) {
     // Find matching configuration
     for (const auto& entry : padded_conv_dispatch_table) {
         if (entry.first == PaddedRealConvConfig2D{signal_length_y, signal_length_x, fft_size_y,
@@ -171,13 +175,16 @@ std::vector<std::tuple<int, int, int, int, int, bool>> get_supported_padded_conv
 void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
                               torch::Tensor conv_data, torch::Tensor output, int fft_size_y,
                               int fft_size_x, bool cross_correlate) {
+    auto reference_device = input.device();
+    int device_index = reference_device.index();
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(device_index).stream();
+
     // --- Type and device checks ---
     TORCH_CHECK(input.device().is_cuda(), "Input tensor must be on CUDA device");
     TORCH_CHECK(fft_workspace.device().is_cuda(), "FFT workspace tensor must be on CUDA device");
     TORCH_CHECK(conv_data.device().is_cuda(), "Convolution data tensor must be on CUDA device");
     TORCH_CHECK(output.device().is_cuda(), "Output tensor must be on CUDA device");
 
-    auto reference_device = input.device();
     TORCH_CHECK(fft_workspace.device() == reference_device,
                 "FFT workspace tensor must be on the same device as the input tensor");
     TORCH_CHECK(conv_data.device() == reference_device,
@@ -241,18 +248,8 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
     TORCH_CHECK(output.size(-2) == valid_length_y,
                 "Output tensor second-to-last dimension must be fft_size_y - signal_length_y + 1");
 
-    // Doing dimension checks for signal/fft sizes and batch dimensions
-    if (input.dim() == 2) {  // input shape (H, W)
-        batch_size = 1;
-        signal_length_y = input.size(0);  // H - number of rows
-        signal_length_x = input.size(1);  // W - number of columns
-    } else if (input.dim() == 3) {        // input shape (batch, H, W)
-        batch_size = input.size(0);       // batch size
-        signal_length_y = input.size(1);  // H - number of rows
-        signal_length_x = input.size(2);  // W - number of columns
-    } else {
-        TORCH_CHECK(false, "Input tensor must be 2D or 3D. Got ", input.dim(), "D.");
-    }
+    // --- CUDA guard ---
+    c10::cuda::CUDAGuard guard(reference_device);
 
     // --- Raw pointers for each of the tensor data ---
     float* input_ptr = input.data_ptr<float>();
@@ -270,7 +267,7 @@ void padded_real_conv_2d_impl(torch::Tensor input, torch::Tensor fft_workspace,
                 ", signal_x=", signal_length_x, ", fft_y=", fft_size_y, ", fft_x=", fft_size_x,
                 ", batch=", batch_size, ", cross_correlate=", cross_correlate);
 
-    conv_func(input_ptr, workspace_ptr, conv_ptr, output_ptr);
+    conv_func(input_ptr, workspace_ptr, conv_ptr, output_ptr, device_index, stream);
 }
 
 // Function to expose to Python - Convolution
