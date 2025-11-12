@@ -6,11 +6,13 @@ from typing import List
 __version__ = "0.0.3alpha"
 
 
-# Try to import each extension
-try:
-    from . import padded_rconv2d
-except ImportError:
-    padded_rconv2d = None
+# # Try to import each extension
+# try:
+#     from . import padded_rconv2d
+# except ImportError:
+#     padded_rconv2d = None
+
+from . import padded_rconv2d
 
 # Load build config if available
 try:

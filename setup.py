@@ -120,7 +120,17 @@ def get_compile_args():
     }
 
 
+def get_torch_library_path():
+    """Get the path to PyTorch libraries."""
+    import torch
+    torch_path = os.path.dirname(torch.__file__)
+    return os.path.join(torch_path, 'lib')
+
+
 DEFAULT_COMPILE_ARGS = get_compile_args()
+
+# Get PyTorch library directory
+TORCH_LIB_DIR = get_torch_library_path()
 
 # Conditionally create extensions
 ext_modules = []
@@ -130,6 +140,14 @@ if "padded_rconv2d" in enabled_extensions:
         name="zipfft.padded_rconv2d",
         sources=["src/cuda/real_conv_2d_binding.cu"],
         include_dirs=[pybind11.get_include()],
+        library_dirs=[TORCH_LIB_DIR],
+        libraries=[
+            "c10",
+            "torch_cpu",
+            "torch_python",
+            "c10_cuda",
+        ],
+        runtime_library_dirs=[TORCH_LIB_DIR],
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(padded_real_conv_2d_extension)
