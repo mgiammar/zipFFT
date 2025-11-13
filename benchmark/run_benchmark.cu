@@ -1,23 +1,31 @@
 // Benchmark script for 2D real convolution performance testing
 // Tests (4096, 4096) image with (512, 512) filter
 //
-// Compile with: nvcc -I/home/mgiammar/miniconda3/envs/zipfft/include/
-// -I/home/mgiammar/miniconda3/envs/zipfft-dev/include/cufftdx/
-// -I/home/mgiammar/git_repositories/zipFFT/src/include
-// -I/home/mgiammar/git_repositories/zipFFT/src/cuda -o run_benchmark
-// /home/mgiammar/git_repositories/zipFFT/benchmark/run_benchmark.cu -arch=sm_89 -O3
-// -DENABLE_CUDA_ARCH_890 Run with: ./run_benchmark
-//
 // GPU (RTX 6000 Ada) has following specs:
 //  * 48 GB GDDR6 ECC
 //  * 91.1 TFLOPS (FP32)
 //  * 960 GB/s memory bandwidth
+
+/*
+ * Compile with:
+ * nvcc -o run_benchmark /home/mgiammar/git_repositories/zipFFT/benchmark/run_benchmark.cu \
+ * -I/home/mgiammar/miniconda3/envs/zipfft/include/ \
+ * -I/home/mgiammar/miniconda3/envs/zipfft-dev/include/cufftdx/ \
+ * -I/home/mgiammar/git_repositories/zipFFT/src/include \
+ * -I/home/mgiammar/git_repositories/zipFFT/src/cuda \
+ * -arch=sm_89 -O3 \
+ * -DENABLE_CUDA_ARCH_890
+ *
+ * Run with:
+ * ./run_benchmark --batch=16
+ */
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <cufftdx.hpp>
 #include <iomanip>
 #include <iostream>
@@ -47,7 +55,6 @@ constexpr unsigned int FFTSizeY = 4096;
 constexpr unsigned int SignalLengthX = 512;
 constexpr unsigned int SignalLengthY = 512;
 
-constexpr unsigned int BATCH_SIZE = 1;
 constexpr bool CROSS_CORRELATE = true;
 
 // Benchmark parameters
@@ -251,7 +258,9 @@ BenchmarkStats compute_stats(const std::vector<float>& times, const WorkTrafficP
     return stats;
 }
 
-int main() {
+// Template function to run benchmark for a specific batch size
+template <unsigned int BATCH_SIZE>
+int run_benchmark_with_batch() {
     std::cout << "========================================\n";
     std::cout << "2D Real Convolution Benchmark\n";
     std::cout << "========================================\n";
@@ -278,6 +287,10 @@ int main() {
     std::cout << "Compute Capability: " << prop.major << "." << prop.minor << "\n";
     std::cout << "Peak FP32: " << (GPU_PEAK_FLOPS / 1e12) << " TFLOPS\n";
     std::cout << "Peak Bandwidth: " << (GPU_PEAK_BANDWIDTH / 1e9) << " GB/s\n\n";
+
+    // Create CUDA stream for kernel execution
+    cudaStream_t stream;
+    CUDA_CHECK_AND_EXIT(cudaStreamCreate(&stream));
 
     const unsigned int StrideY = FFTSizeX / 2 + 1;
     const unsigned int ValidLengthX = FFTSizeX - SignalLengthX + 1;
@@ -343,9 +356,9 @@ int main() {
     for (int i = 0; i < NUM_WARMUP_RUNS; ++i) {
         padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
                                   BATCH_SIZE, CROSS_CORRELATE>(d_input, d_workspace, d_conv,
-                                                               d_output);
+                                                               d_output, device, stream);
     }
-    CUDA_CHECK_AND_EXIT(cudaDeviceSynchronize());
+    CUDA_CHECK_AND_EXIT(cudaStreamSynchronize(stream));
     std::cout << "Done!\n\n";
 
     // Timing runs - batch all iterations together to amortize overhead
@@ -357,7 +370,7 @@ int main() {
     for (int i = 0; i < NUM_TIMING_RUNS; ++i) {
         padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
                                   BATCH_SIZE, CROSS_CORRELATE>(d_input, d_workspace, d_conv,
-                                                               d_output);
+                                                               d_output, device, stream);
     }
     float total_elapsed = timer.stop();
     std::cout << "Done!\n\n";
@@ -394,10 +407,60 @@ int main() {
     std::cout << "========================================\n";
 
     // Cleanup
+    CUDA_CHECK_AND_EXIT(cudaStreamDestroy(stream));
     cudaFree(d_input);
     cudaFree(d_workspace);
     cudaFree(d_conv);
     cudaFree(d_output);
 
     return 0;
+}
+
+// Parse command line arguments
+int parse_batch_size(int argc, char** argv) {
+    int batch_size = 16;  // Default value
+    
+    for (int i = 1; i < argc; ++i) {
+        if (std::strncmp(argv[i], "--batch=", 8) == 0) {
+            batch_size = std::atoi(argv[i] + 8);
+        } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
+            std::cout << "Usage: " << argv[0] << " [--batch=SIZE]\n";
+            std::cout << "  --batch=SIZE  Set batch size (supported: 1, 2, 4, 8, 16, 32, 64)\n";
+            std::cout << "                Default: 16\n";
+            std::cout << "  --help, -h    Show this help message\n";
+            return -1;
+        }
+    }
+    
+    return batch_size;
+}
+
+int main(int argc, char** argv) {
+    int batch_size = parse_batch_size(argc, argv);
+    
+    if (batch_size == -1) {
+        return 0;  // Help was displayed
+    }
+    
+    // Dispatch to the appropriate template instantiation
+    switch (batch_size) {
+        case 1:
+            return run_benchmark_with_batch<1>();
+        case 2:
+            return run_benchmark_with_batch<2>();
+        case 4:
+            return run_benchmark_with_batch<4>();
+        case 8:
+            return run_benchmark_with_batch<8>();
+        case 16:
+            return run_benchmark_with_batch<16>();
+        case 32:
+            return run_benchmark_with_batch<32>();
+        case 64:
+            return run_benchmark_with_batch<64>();
+        default:
+            std::cerr << "Error: Unsupported batch size: " << batch_size << "\n";
+            std::cerr << "Supported batch sizes are: 1, 2, 4, 8, 16, 32, 64\n";
+            return 1;
+    }
 }
