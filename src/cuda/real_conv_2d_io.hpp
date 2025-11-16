@@ -72,7 +72,7 @@ struct io_conv {
     template <class FFT, typename GmemType, typename RmemType, class LoadOp = zipfft::identity,
               int BatchOffset, int BlockOffset, bool IsPadded, int SignalLength>
     __device__ __forceinline__ void load_contiguous(const GmemType* gmem, RmemType* rmem,
-                                                    [[maybe_unused]] LoadOp op = {}) {
+                                                    LoadOp op = {}) {
         using input_t = typename FFT::input_type;
         using complex_type = typename FFT::value_type;
 
@@ -92,7 +92,7 @@ struct io_conv {
                 // if (local_fft_element < FFT::input_length) {}
                 if (local_fft_element < SignalLength) {
                     reinterpret_cast<GmemType*>(rmem)[i * inner_loop_limit + j] =
-                        reinterpret_cast<const GmemType*>(gmem)[gmem_index + j];
+                        op(reinterpret_cast<const GmemType*>(gmem)[gmem_index + j]);
                 } else if (IsPadded) {
                     reinterpret_cast<GmemType*>(rmem)[i * inner_loop_limit + j] =
                         get_zero<typename complex_type::value_type>();  // Zero padding
@@ -105,7 +105,7 @@ struct io_conv {
     template <class FFT, typename GmemType, typename RmemType, class StoreOp = zipfft::identity,
               int BatchOffset, int BlockOffset, bool IsPadded, int ValidLength>
     __device__ __forceinline__ void store_contiguous(const RmemType* rmem, GmemType* gmem,
-                                                     [[maybe_unused]] StoreOp op = {}) {
+                                                     StoreOp op = {}) {
         using output_t = typename FFT::output_type;
         using complex_type = typename FFT::value_type;
 
@@ -126,7 +126,7 @@ struct io_conv {
                 // if (local_fft_element < FFT::output_length) {}
                 if (local_fft_element < ValidLength) {
                     reinterpret_cast<GmemType*>(gmem)[gmem_index + j] =
-                        reinterpret_cast<const GmemType*>(rmem)[i * inner_loop_limit + j];
+                        op(reinterpret_cast<const GmemType*>(rmem)[i * inner_loop_limit + j]);
                     // If we are outside of the valid length, skip write for truncation
                 }
             }
@@ -137,7 +137,7 @@ struct io_conv {
     template <class FFT, typename GmemType, typename RmemType, class LoadOp = zipfft::identity,
               int BatchOffset, int BlockOffset, int Stride, bool IsPadded, int SignalLength>
     __device__ __forceinline__ void load_strided(const GmemType* gmem, RmemType* rmem,
-                                                 [[maybe_unused]] LoadOp op = {}) {
+                                                 LoadOp op = {}) {
         using input_t = typename FFT::input_type;
 
         static_assert(sizeof(input_t) == sizeof(GmemType),
@@ -159,7 +159,7 @@ struct io_conv {
             if (local_fft_element < FFT::input_length) {
                 if (local_fft_element < SignalLength) {
                     reinterpret_cast<input_t*>(rmem)[i] =
-                        reinterpret_cast<const input_t*>(gmem)[gmem_index];
+                        op(reinterpret_cast<const input_t*>(gmem)[gmem_index]);
                 } else if (IsPadded) {
                     reinterpret_cast<input_t*>(rmem)[i] = get_zero<input_t>();  // Zero padding
                 }
@@ -171,7 +171,7 @@ struct io_conv {
     template <class FFT, typename GmemType, typename RmemType, class StoreOp = zipfft::identity,
               int BatchOffset, int BlockOffset, int Stride, bool IsPadded, int ValidLength>
     __device__ __forceinline__ void store_strided(const RmemType* rmem, GmemType* gmem,
-                                                  [[maybe_unused]] StoreOp op = {}) {
+                                                  StoreOp op = {}) {
         using output_t = typename FFT::output_type;
 
         static_assert(sizeof(output_t) == sizeof(GmemType),
@@ -189,7 +189,7 @@ struct io_conv {
             if (local_fft_element < FFT::output_length) {
                 if (local_fft_element < ValidLength) {
                     reinterpret_cast<output_t*>(gmem)[gmem_index] =
-                        (reinterpret_cast<const output_t*>(rmem)[i]);
+                        op(reinterpret_cast<const output_t*>(rmem)[i]);
                 }
                 // If we are outside of the valid length, skip write for truncation
                 gmem_index += Stride * FFT::stride;
@@ -217,7 +217,7 @@ struct io_conv {
      */
     template <typename GmemType, typename RmemType, class LoadOp = zipfft::identity>
     __device__ __forceinline__ void load_gmem_to_rmem(const GmemType* gmem, RmemType* rmem,
-                                                      [[maybe_unused]] LoadOp op = {}) {
+                                                      LoadOp op = {}) {
         // Along the strided dimension (Y)
         if constexpr (Dim == dimension::y) {
             constexpr bool is_load_padded = is_y_padded and Forward;
@@ -259,7 +259,7 @@ struct io_conv {
 
     template <typename GmemType, typename RmemType, class StoreOp = zipfft::identity>
     __device__ __forceinline__ void store_rmem_to_gmem(GmemType* gmem, const RmemType* rmem,
-                                                       [[maybe_unused]] StoreOp op = {}) {
+                                                       StoreOp op = {}) {
         // Along the strided dimension (Y)
         if constexpr (Dim == dimension::y) {
             constexpr bool is_store_padded = is_y_padded and not Forward;
@@ -276,8 +276,17 @@ struct io_conv {
             constexpr int valid_length  = (not Forward) ? valid_length_y : fft_size_y;
             // clang-format on
 
-            store_strided<FFTY, GmemType, RmemType, StoreOp, batch_offset, block_offset, stride,
-                          is_store_padded, valid_length>(rmem, gmem, op);
+            // Do inverse FFT normalization (dividing by FFTSize) for reverse FFTs
+            // to maintain consistency with cuFFT behavior
+            if constexpr (!Forward) {
+                zipfft::divide_by_scalar<float> norm_op(static_cast<float>(FFTSizeY));
+                store_strided<FFTY, GmemType, RmemType, zipfft::divide_by_scalar<float>,
+                              batch_offset, block_offset, stride, is_store_padded, valid_length>(
+                    rmem, gmem, norm_op);
+            } else {
+                store_strided<FFTY, GmemType, RmemType, StoreOp, batch_offset, block_offset, stride,
+                              is_store_padded, valid_length>(rmem, gmem, op);
+            }
         } else {  // Along the contiguous dimension (X)
             constexpr bool is_store_padded = is_x_padded and not Forward;
 
@@ -291,8 +300,17 @@ struct io_conv {
             constexpr int valid_length  = (Forward) ? x_dim : valid_length_x;
             // clang-format on
 
-            store_contiguous<FFTX, GmemType, RmemType, StoreOp, batch_offset, block_offset,
-                             is_store_padded, valid_length>(rmem, gmem, op);
+            // Do inverse FFT normalization (dividing by FFTSize) for reverse FFTs
+            // to maintain consistency with cuFFT behavior
+            if constexpr (!Forward) {
+                zipfft::divide_by_scalar<float> norm_op(static_cast<float>(FFTSizeX));
+                store_contiguous<FFTX, GmemType, RmemType, zipfft::divide_by_scalar<float>,
+                                 batch_offset, block_offset, is_store_padded, valid_length>(
+                    rmem, gmem, norm_op);
+            } else {
+                store_contiguous<FFTX, GmemType, RmemType, StoreOp, batch_offset, block_offset,
+                                 is_store_padded, valid_length>(rmem, gmem, op);
+            }
         }
     }
 };  // struct io_conv

@@ -234,21 +234,54 @@ struct identity {
 };
 
 // Utility multiply by scalar function for data conversion on load/store
+template <typename T>
 struct multiply_by_scalar {
-    template <typename T, T factor>
+    T factor;
+
+    __device__ __forceinline__ multiply_by_scalar(T f) : factor(f) {
+    }
+
     __device__ __forceinline__ T operator()(const T& val) const {
         return val * factor;
+    }
+
+    // Overload for complex types
+    template <typename ComplexT>
+    __device__ __forceinline__ ComplexT operator()(const ComplexT& val) const {
+        if constexpr (zipfft::has_complex_interface<ComplexT>::value) {
+            using scalar_t = decltype(ComplexT::x);
+            return ComplexT{val.x * static_cast<scalar_t>(factor),
+                            val.y * static_cast<scalar_t>(factor)};
+        } else {
+            return val * factor;
+        }
     }
 };
 
 // Utility divide by scalar function for data conversion on load/store
+template <typename T>
 struct divide_by_scalar {
-    template <typename T, T factor>
+    T factor;
+
+    __device__ __forceinline__ divide_by_scalar(T f) : factor(f) {
+    }
+
     __device__ __forceinline__ T operator()(const T& val) const {
         return val / factor;
     }
-};
 
+    // Overload for complex types
+    template <typename ComplexT>
+    __device__ __forceinline__ ComplexT operator()(const ComplexT& val) const {
+        if constexpr (zipfft::has_complex_interface<ComplexT>::value) {
+            using scalar_t = decltype(ComplexT::x);
+            return ComplexT{val.x / static_cast<scalar_t>(factor),
+                            val.y / static_cast<scalar_t>(factor)};
+        } else {
+            return val / factor;
+        }
+    }
+};
 }  // namespace zipfft
 
 #endif  // ZIPFFT_COMMON_HPP_

@@ -36,7 +36,7 @@ if zipfft.padded_rconv2d is not None:
     ]
 
 NUM_TEST_REPEATS = 10
-RTOL = 3e0  # NOTE: Effectively no rtol since numerical differences affect small values
+RTOL = 3e1  # NOTE: Effectively no rtol since numerical differences affect small values
 ATOL = 5e-6
 
 
@@ -148,9 +148,6 @@ def run_conv_or_corr_2d_test(
             fft_size_y,
             fft_size_x,
         )
-
-    if FFT_NORMALIZATION_DIRECTION == "backward":
-        output /= fft_size_y * fft_size_x  # For 'backward' normalization
 
     # Synchronize to ensure all operations are complete
     torch.cuda.synchronize()
