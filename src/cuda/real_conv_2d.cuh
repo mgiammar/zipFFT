@@ -6,11 +6,11 @@
 #include "../include/zipfft_padded_io.hpp"
 #include "../include/zipfft_strided_io.hpp"
 #include "../include/zipfft_strided_padded_io.hpp"
+#include "./real_conv_2d_io.hpp"
 
 // --- Forward r2c Kernel Definition with Index Mappers ---
 // This kernel just does the real transform, no convolution
-template <class FFT, class InputLayout, class OutputLayout, unsigned int SignalLength,
-          typename ComplexType = typename FFT::value_type,
+template <class FFT, class IO_Handler, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
     void padded_block_fft_r2c_1d_kernel_with_layout(ScalarType* input_data,
@@ -19,32 +19,24 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using complex_type = ComplexType;
     using scalar_type = ScalarType;
 
-    // Input is padded (zero-pad from SignalLength to FFT size)
-    // Output uses standard layout
-    // InputLayout (second template arg) only matters for the input_io
-    // OutputLayout (third template arg) only matters for the output_io
-    using input_io = zipfft::io_padded_with_layout<FFT, InputLayout, InputLayout, SignalLength>;
-    using output_io = zipfft::io_with_layout<FFT, OutputLayout, OutputLayout>;
+    IO_Handler io_handler;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
-    const unsigned int local_fft_id = threadIdx.y;
 
-    // Load using padded input layout (zero-pads to FFT size)
-    input_io::load(input_data, thread_data, local_fft_id);
+    io_handler.load_gmem_to_rmem(input_data, thread_data);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem, workspace);
 
     // Store using output layout (full FFT output)
-    output_io::store(thread_data, output_data, local_fft_id);
+    io_handler.store_rmem_to_gmem(output_data, thread_data);
 }
 
 // --- Inverse c2r Kernel Definition with Index Mappers ---
 // This kernel just does the real transform, no convolution
-template <class FFT, class InputLayout, class OutputLayout, unsigned int SignalLength,
-          typename ComplexType = typename FFT::value_type,
+template <class FFT, class IO_Handler, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
     void padded_block_fft_c2r_2d_kernel_with_layout(ComplexType* input_data,
@@ -53,29 +45,23 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
     using complex_type = ComplexType;
     using scalar_type = ScalarType;
 
-    // Input uses standard layout
-    // Output is padded (truncates from FFT size to SignalLength)
-    using input_io = zipfft::io_with_layout<FFT, InputLayout, InputLayout>;
-    using output_io = zipfft::io_padded_with_layout<FFT, OutputLayout, OutputLayout, SignalLength>;
+    IO_Handler io_handler;
 
     // Local array for thread
     complex_type thread_data[FFT::storage_size];
-    const unsigned int local_fft_id = threadIdx.y;
 
-    // Load using input layout (full complex input)
-    input_io::load(input_data, thread_data, local_fft_id);
+    io_handler.load_gmem_to_rmem(input_data, thread_data);
 
     // Execute FFT
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT().execute(thread_data, shared_mem, workspace);
 
     // Store using padded output layout (truncates to SignalLength)
-    output_io::store(thread_data, output_data, local_fft_id);
+    io_handler.store_rmem_to_gmem(output_data, thread_data);
 }
 
 // --- Strided C2C convolution (or cross-correlation) Kernel with Padding ---
-template <class FFT_fwd, class FFT_inv, class InputLayout, class OutputLayout, class ConvDataLayout,
-          unsigned int Stride, unsigned int InputSignalLength, unsigned int OutputSignalLength,
+template <class FFT_fwd, class FFT_inv, class IO_Handler_fwd, class IO_Handler_inv,
           bool CrossCorrelate = false>
 __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     void strided_padded_block_conv_c2c_2d_kernel_with_layout(
@@ -83,35 +69,29 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         typename FFT_fwd::workspace_type workspace_fwd,
         typename FFT_inv::workspace_type workspace_inv) {
     using complex_type = typename FFT_fwd::value_type;
+    auto fft_length_y = cufftdx::size_of<FFT_fwd>::value;
 
-    // TODO: Static assertions to ensure FFT_fwd and FFT_inv are the same
-    // except for their direction.
+    IO_Handler_fwd io_handler_fwd;
+    IO_Handler_inv io_handler_inv;
 
-    /* clang-format off */
-    using input_io =  zipfft::io_strided_padded_with_layout<FFT_fwd, InputLayout,    InputLayout,   Stride,  InputSignalLength>;
-    using output_io = zipfft::io_strided_padded_with_layout<FFT_inv, OutputLayout,   OutputLayout,   Stride, OutputSignalLength>;
-    // using conv_io =   zipfft::io_strided_with_layout<       FFT_fwd, ConvDataLayout, ConvDataLayout, Stride>;
-    /* clang-format on */
-    ConvDataLayout conv_index_mapper;
-
-    const unsigned int local_fft_id = threadIdx.y;
-    const unsigned int apparent_ffts_per_block = input_io::apparent_ffts_per_block;
-    const unsigned int global_fft_id = blockIdx.x * apparent_ffts_per_block + local_fft_id;
-    const unsigned int column_id = global_fft_id % Stride;
+    // Where the row to read convolution data for this thread is located in global memory
+    const unsigned int global_read_offset =
+        threadIdx.x + (threadIdx.y * fft_length_y) +
+        (blockIdx.x * FFT_fwd::ffts_per_block * fft_length_y) +
+        (blockIdx.y * 0);  // Only one image being convolved across batches
+        // (blockIdx.y * (fft_length_y + IO_Handler_fwd::x_dim));
 
     // Local array for FFT thread execution
     complex_type thread_data[FFT_fwd::storage_size];
-    input_io::load(data, thread_data, local_fft_id);
+    io_handler_fwd.load_gmem_to_rmem(data, thread_data);
 
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
 
     // Point-wise multiply in the frequency domain
-
 #pragma unroll
-    for (unsigned int i = 0; i < FFT_fwd::output_ept; ++i) {
-        const unsigned int elem_id = threadIdx.x + i * FFT_fwd::stride;
-        const unsigned int conv_index = conv_index_mapper(column_id, elem_id, 0);
+    for (unsigned int i = 0; i < FFT_fwd::storage_size; ++i) {
+        const unsigned int conv_index = global_read_offset + i * FFT_fwd::stride;
 
         const float2 a = reinterpret_cast<float2*>(thread_data)[i];
         const float2 b = __ldg(&reinterpret_cast<const float2*>(conv_data)[conv_index]);
@@ -129,9 +109,10 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         reinterpret_cast<float2*>(thread_data)[i] = c;
     }
 
+    // FFT_inv execution
     FFT_inv().execute(thread_data, shared_mem, workspace_inv);
 
-    output_io::store(thread_data, data, local_fft_id);
+    io_handler_inv.store_rmem_to_gmem(data, thread_data);
 }
 
 // --- Convolution/Cross-correlation 2D FFT Launcher ---
@@ -241,41 +222,21 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     const unsigned int StrideY = FFTX_fwd::output_length;
     const unsigned int ValidLengthX = FFTSizeX - SignalLengthX + 1;
     const unsigned int ValidLengthY = FFTSizeY - SignalLengthY + 1;
-    using FwdInputLayoutX =
-        zipfft::index_mapper<zipfft::int_pair<SignalLengthX, 1>,
-                             zipfft::int_pair<SignalLengthY, SignalLengthX>,
-                             zipfft::int_pair<Batch, SignalLengthY * SignalLengthX>>;
-    using FwdOutputLayoutX =
-        zipfft::index_mapper<zipfft::int_pair<StrideY, 1>, zipfft::int_pair<SignalLengthY, StrideY>,
-                             zipfft::int_pair<Batch, FFTSizeY * StrideY>>;
 
-    using FwdInputLayoutY =
-        zipfft::index_mapper<zipfft::int_pair<FFTSizeY, StrideY>, zipfft::int_pair<StrideY, 1>,
-                             zipfft::int_pair<Batch, FFTSizeY * StrideY>>;
-    using FwdOutputLayoutY =
-        zipfft::index_mapper<zipfft::int_pair<FFTSizeY, StrideY>, zipfft::int_pair<StrideY, 1>,
-                             zipfft::int_pair<Batch, FFTSizeY * StrideY>>;
-
-    using ConvDataLayout =
-        zipfft::index_mapper<zipfft::int_pair<StrideY, FFTSizeY>, zipfft::int_pair<FFTSizeY, 1>,
-                             zipfft::int_pair<Batch, 0>>;  // Broadcast across batches
-
-    using InvInputLayoutX =
-        zipfft::index_mapper<zipfft::int_pair<StrideY, 1>, zipfft::int_pair<ValidLengthY, StrideY>,
-                             zipfft::int_pair<Batch, FFTSizeY * StrideY>>;
-    using InvOutputLayoutX =
-        zipfft::index_mapper<zipfft::int_pair<ValidLengthX, 1>,
-                             zipfft::int_pair<ValidLengthY, ValidLengthX>,
-                             zipfft::int_pair<Batch, ValidLengthY * ValidLengthX>>;
+    // Define IO handlers for each kernel
+    // clang-format off
+    using IO_X_fwd = zipfft::io_conv<zipfft::dimension::x, true,  Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
+    using IO_Y_fwd = zipfft::io_conv<zipfft::dimension::y, true,  Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
+    using IO_Y_inv = zipfft::io_conv<zipfft::dimension::y, false, Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
+    using IO_X_inv = zipfft::io_conv<zipfft::dimension::x, false, Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
+    // clang-format on
 
     // 4. Construct the kernel pointers and associated attributes
-    auto kernel_r2c_x = padded_block_fft_r2c_1d_kernel_with_layout<FFTX_fwd, FwdInputLayoutX,
-                                                                   FwdOutputLayoutX, SignalLengthX>;
-    auto kernel_c2c_y = strided_padded_block_conv_c2c_2d_kernel_with_layout<
-        FFTY_fwd, FFTY_inv, FwdInputLayoutY, FwdOutputLayoutY, ConvDataLayout, StrideY,
-        SignalLengthY, ValidLengthY, CrossCorrelate>;
-    auto kernel_c2r_x = padded_block_fft_c2r_2d_kernel_with_layout<FFTX_inv, InvInputLayoutX,
-                                                                   InvOutputLayoutX, ValidLengthX>;
+    auto kernel_r2c_x = padded_block_fft_r2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
+    auto kernel_c2c_y =
+        strided_padded_block_conv_c2c_2d_kernel_with_layout<FFTY_fwd, FFTY_inv, IO_Y_fwd, IO_Y_inv,
+                                                            CrossCorrelate>;
+    auto kernel_c2r_x = padded_block_fft_c2r_2d_kernel_with_layout<FFTX_inv, IO_X_inv>;
 
     // Increase shared memory size to maximum of the three kernels
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
@@ -298,11 +259,15 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
 
     // 5. Launch the three kernels in sequence
     const unsigned int grid_size_fwd_x =
-        ((Batch * SignalLengthY) + FFTX_fwd::ffts_per_block - 1) / FFTX_fwd::ffts_per_block;
+        (SignalLengthY + FFTX_fwd::ffts_per_block - 1) / FFTX_fwd::ffts_per_block;
     const unsigned int grid_size_fwd_y =
-        ((Batch * StrideY) + FFTY_fwd::ffts_per_block - 1) / FFTY_fwd::ffts_per_block;
+        (StrideY + FFTY_fwd::ffts_per_block - 1) / FFTY_fwd::ffts_per_block;
     const unsigned int grid_size_inv_x =
-        ((Batch * ValidLengthY) + FFTX_inv::ffts_per_block - 1) / FFTX_inv::ffts_per_block;
+        (ValidLengthY + FFTX_inv::ffts_per_block - 1) / FFTX_inv::ffts_per_block;
+
+    dim3 grid_dim_fwd_x = dim3(grid_size_fwd_x, Batch, 1);
+    dim3 grid_dim_fwd_y = dim3(grid_size_fwd_y, Batch, 1);
+    dim3 grid_dim_inv_x = dim3(grid_size_inv_x, Batch, 1);
 
     // Cast the input data into cuFFTDx types
     scalar_type* input_data_cast = reinterpret_cast<scalar_type*>(input_data);
@@ -310,15 +275,15 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     const complex_type* conv_data_cast = reinterpret_cast<const complex_type*>(conv_data);
     scalar_type* output_data_cast = reinterpret_cast<scalar_type*>(output_data);
 
-    kernel_r2c_x<<<grid_size_fwd_x, FFTX_fwd::block_dim, FFTX_fwd::shared_memory_size, stream>>>(
+    kernel_r2c_x<<<grid_dim_fwd_x, FFTX_fwd::block_dim, FFTX_fwd::shared_memory_size, stream>>>(
         input_data_cast, fft_workspace_cast, workspace_fwd_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    kernel_c2c_y<<<grid_size_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size, stream>>>(
+    kernel_c2c_y<<<grid_dim_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size, stream>>>(
         fft_workspace_cast, conv_data_cast, workspace_fwd_y, workspace_inv_y);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    kernel_c2r_x<<<grid_size_inv_x, FFTX_inv::block_dim, FFTX_inv::shared_memory_size, stream>>>(
+    kernel_c2r_x<<<grid_dim_inv_x, FFTX_inv::block_dim, FFTX_inv::shared_memory_size, stream>>>(
         fft_workspace_cast, output_data_cast, workspace_inv_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
