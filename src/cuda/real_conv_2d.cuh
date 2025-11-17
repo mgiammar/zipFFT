@@ -1,11 +1,6 @@
 #include <cufftdx.hpp>
 
-#include "../include/zipfft_block_io.hpp"
 #include "../include/zipfft_common.hpp"
-#include "../include/zipfft_index_mapper.hpp"
-#include "../include/zipfft_padded_io.hpp"
-#include "../include/zipfft_strided_io.hpp"
-#include "../include/zipfft_strided_padded_io.hpp"
 #include "./real_conv_2d_io.hpp"
 
 // --- Forward r2c Kernel Definition with Index Mappers ---
@@ -79,7 +74,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         threadIdx.x + (threadIdx.y * fft_length_y) +
         (blockIdx.x * FFT_fwd::ffts_per_block * fft_length_y) +
         (blockIdx.y * 0);  // Only one image being convolved across batches
-        // (blockIdx.y * (fft_length_y + IO_Handler_fwd::x_dim));
+    // (blockIdx.y * (fft_length_y + IO_Handler_fwd::x_dim));
 
     // Local array for FFT thread execution
     complex_type thread_data[FFT_fwd::storage_size];
