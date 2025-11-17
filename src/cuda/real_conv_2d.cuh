@@ -88,7 +88,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
 
-    // Point-wise multiply in the frequency domain
+    // Point-wise multiply in the frequency domain using FMA for higher precision
 #pragma unroll
     for (unsigned int i = 0; i < FFT_fwd::storage_size; ++i) {
         const unsigned int conv_index = global_read_offset + i * FFT_fwd::stride;
@@ -100,11 +100,17 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         // computing c = a * b       (convolution)
         // or        c = conj(a) * b (cross-correlation)
         if (CrossCorrelate) {
-            c.x = a.x * b.x + a.y * b.y;
-            c.y = -a.y * b.x + a.x * b.y;
+            // c = conj(a) * b
+            // c.x = a.x * b.x + a.y * b.y
+            // c.y = a.x * b.y - a.y * b.x
+            c.x = __fmaf_rn(a.x, b.x, a.y * b.y);   // a.x*b.x + a.y*b.y with single rounding
+            c.y = __fmaf_rn(a.x, b.y, -a.y * b.x);  // a.x*b.y - a.y*b.x
         } else {
-            c.x = a.x * b.x - a.y * b.y;
-            c.y = a.x * b.y + a.y * b.x;
+            // c = a * b
+            // c.x = a.x * b.x - a.y * b.y
+            // c.y = a.x * b.y + a.y * b.x
+            c.x = __fmaf_rn(a.x, b.x, -a.y * b.y);  // a.x*b.x - a.y*b.y with single rounding
+            c.y = __fmaf_rn(a.x, b.y, a.y * b.x);   // a.x*b.y + a.y*b.x
         }
         reinterpret_cast<float2*>(thread_data)[i] = c;
     }

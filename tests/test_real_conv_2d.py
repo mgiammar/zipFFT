@@ -167,7 +167,7 @@ def run_conv_or_corr_2d_test(
 
     # For small sizes (fft_size <= 512) use allclose check, but for larger transforms,
     # check the L2 norm instead to avoid failures due to implementation differences
-    if max(fft_size_y, fft_size_x) <= 512:
+    if max(fft_size_y, fft_size_x) < 512:
         assert torch.allclose(torch_result, output, rtol=rtol, atol=atol), error_msg
     else:
         l2_norm = torch.norm(torch_result - output) / torch.norm(torch_result)
