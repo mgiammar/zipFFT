@@ -6,51 +6,13 @@ from typing import List
 __version__ = "0.0.3alpha"
 
 
-# Try to import each extension
-try:
-    from . import cfft1d
-except ImportError:
-    cfft1d = None
-
-try:
-    from . import rfft1d
-except ImportError:
-    rfft1d = None
-
-try:
-    from . import padded_rfft1d
-except ImportError:
-    padded_rfft1d = None
-
-try:
-    from . import padded_cfft1d
-except ImportError:
-    padded_cfft1d = None
-
-try:
-    from . import strided_cfft1d
-except ImportError:
-    strided_cfft1d = None
-
+# # Try to import each extension
 # try:
-#     from . import strided_padded_cfft1d
+#     from . import padded_rconv2d
 # except ImportError:
-#     strided_padded_cfft1d = None
+#     padded_rconv2d = None
 
-try:
-    from . import rfft2d
-except ImportError:
-    rfft2d = None
-
-try:
-    from . import padded_rfft2d
-except ImportError:
-    padded_rfft2d = None
-
-try:
-    from . import padded_rconv2d
-except ImportError:
-    padded_rconv2d = None
+from . import padded_rconv2d
 
 # Load build config if available
 try:
@@ -79,13 +41,5 @@ __all__ = [
     "is_extension_available",
     "get_available_extensions",
     "get_cuda_architectures",
-    "cfft1d",
-    "rfft1d",
-    "padded_rfft1d",
-    "strided_cfft1d",
-    "padded_cfft1d",
-    # "strided_padded_cfft1d",
-    "rfft2d",
-    "padded_rfft2d",
     "padded_rconv2d",
 ]

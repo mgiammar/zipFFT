@@ -41,6 +41,8 @@
 #endif  // CUFFT_CHECK_AND_EXIT
 
 namespace zipfft {
+enum class dimension { x, y, z };
+
 inline unsigned int get_cuda_device_arch() {
     int device;
     CUDA_CHECK_AND_EXIT(cudaGetDevice(&device));
@@ -54,47 +56,45 @@ inline unsigned int get_cuda_device_arch() {
 }
 
 namespace detail {
-    template <typename, typename = void>
-    struct has_x_field : std::false_type {};
+template <typename, typename = void>
+struct has_x_field : std::false_type {};
 
-    template <typename T>
-    struct has_x_field<T, std::void_t<decltype(T::x)>> : std::true_type {};
+template <typename T>
+struct has_x_field<T, std::void_t<decltype(T::x)>> : std::true_type {};
 
-    template <typename, typename = void>
-    struct has_y_field : std::false_type {};
+template <typename, typename = void>
+struct has_y_field : std::false_type {};
 
-    template <typename T>
-    struct has_y_field<T, std::void_t<decltype(T::y)>> : std::true_type {};
+template <typename T>
+struct has_y_field<T, std::void_t<decltype(T::y)>> : std::true_type {};
 
-    // for mixed IO
-    template<typename T1, typename T1R, typename T2, typename T2R>
-    struct are_same {
-        constexpr static bool value = std::is_same_v<T1, T1R> && std::is_same_v<T2, T2R>;
-    };
+// for mixed IO
+template <typename T1, typename T1R, typename T2, typename T2R>
+struct are_same {
+    constexpr static bool value = std::is_same_v<T1, T1R> && std::is_same_v<T2, T2R>;
+};
 
-    template<typename T1, typename T1R, typename T2, typename T2R>
-    inline constexpr bool are_same_v = are_same<T1, T1R, T2, T2R>::value;
+template <typename T1, typename T1R, typename T2, typename T2R>
+inline constexpr bool are_same_v = are_same<T1, T1R, T2, T2R>::value;
 
-    template<typename T, typename = void>
-    struct has_value_type: std::false_type {
-    };
+template <typename T, typename = void>
+struct has_value_type : std::false_type {};
 
-    template<typename T>
-    struct has_value_type<T, decltype((void)typename T::value_type(), void())>: std::true_type {
-    };
+template <typename T>
+struct has_value_type<T, decltype((void)typename T::value_type(), void())> : std::true_type {};
 
-    template<typename T>
-    inline constexpr bool has_value_type_v = has_value_type<T>::value;
+template <typename T>
+inline constexpr bool has_value_type_v = has_value_type<T>::value;
 
-    template<typename T, typename = void>
-    struct get_precision {
-        using type = T;
-    };
+template <typename T, typename = void>
+struct get_precision {
+    using type = T;
+};
 
-    template<typename T>
-    struct get_precision<T, std::enable_if_t<has_value_type_v<T>, void>> {
-        using type = typename T::value_type;
-    };
+template <typename T>
+struct get_precision<T, std::enable_if_t<has_value_type_v<T>, void>> {
+    using type = typename T::value_type;
+};
 
 }  // namespace detail
 
@@ -103,15 +103,13 @@ namespace detail {
 // * float2
 // * cufftdx::complex<>
 // useful for thrust transformations
-template<typename T, typename = void>
-struct has_complex_interface: std::false_type {};
+template <typename T, typename = void>
+struct has_complex_interface : std::false_type {};
 
-template<typename T>
-struct has_complex_interface<T,
-                                std::enable_if_t<
-                                    detail::has_x_field<T>::value and
-                                    detail::has_y_field<T>::value>>:
-    std::is_same<decltype(T::x), decltype(T::y)> {};
+template <typename T>
+struct has_complex_interface<
+    T, std::enable_if_t<detail::has_x_field<T>::value and detail::has_y_field<T>::value>>
+    : std::is_same<decltype(T::x), decltype(T::y)> {};
 
 template <typename T>
 struct vector_type;
@@ -227,6 +225,63 @@ inline __device__ constexpr T get_zero() {
     }
 }
 
+// Utility identify function for data conversion on load/store
+struct identity {
+    template <typename T>
+    __device__ __forceinline__ T operator()(const T& val) {
+        return val;
+    }
+};
+
+// Utility multiply by scalar function for data conversion on load/store
+template <typename T>
+struct multiply_by_scalar {
+    T factor;
+
+    __device__ __forceinline__ multiply_by_scalar(T f) : factor(f) {
+    }
+
+    __device__ __forceinline__ T operator()(const T& val) const {
+        return val * factor;
+    }
+
+    // Overload for complex types
+    template <typename ComplexT>
+    __device__ __forceinline__ ComplexT operator()(const ComplexT& val) const {
+        if constexpr (zipfft::has_complex_interface<ComplexT>::value) {
+            using scalar_t = decltype(ComplexT::x);
+            return ComplexT{val.x * static_cast<scalar_t>(factor),
+                            val.y * static_cast<scalar_t>(factor)};
+        } else {
+            return val * factor;
+        }
+    }
+};
+
+// Utility divide by scalar function for data conversion on load/store
+template <typename T>
+struct divide_by_scalar {
+    T factor;
+
+    __device__ __forceinline__ divide_by_scalar(T f) : factor(f) {
+    }
+
+    __device__ __forceinline__ T operator()(const T& val) const {
+        return val / factor;
+    }
+
+    // Overload for complex types
+    template <typename ComplexT>
+    __device__ __forceinline__ ComplexT operator()(const ComplexT& val) const {
+        if constexpr (zipfft::has_complex_interface<ComplexT>::value) {
+            using scalar_t = decltype(ComplexT::x);
+            return ComplexT{val.x / static_cast<scalar_t>(factor),
+                            val.y / static_cast<scalar_t>(factor)};
+        } else {
+            return val / factor;
+        }
+    }
+};
 }  // namespace zipfft
 
 #endif  // ZIPFFT_COMMON_HPP_

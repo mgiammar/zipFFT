@@ -9,7 +9,7 @@ import os
 import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-__version__ = "0.0.2alpha"
+__version__ = "0.0.3alpha"
 
 
 # Parse command line arguments for CUDA architectures
@@ -20,13 +20,13 @@ def parse_cuda_architectures():
         "--cuda-arch",
         "--cuda-architectures",
         dest="cuda_architectures",
-        help='Comma-separated list of CUDA architectures to compile for (e.g., "7.5,8.0,8.6")',
+        help='Comma-separated list of CUDA arch to compile for (e.g., "7.5,8.0,8.6")',
         default=None,  # Will use env var or fallback if None
     )
     parser.add_argument(
         "--enable-extensions",
         dest="enable_extensions",
-        help='Comma-separated list of extensions to build (e.g., "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,rfft2d,padded_rfft2d,padded_rconv2d")',
+        help='Comma-separated list of extensions to build (e.g., "padded_rconv2d")',
         default=None,  # Will use env var or fallback if None
     )
 
@@ -60,7 +60,7 @@ cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 enabled_exts_str = (
     parsed_args.enable_extensions
     or os.environ.get("ENABLED_EXTENSIONS")
-    or "cfft1d,rfft1d,padded_rfft1d,padded_cfft1d,strided_cfft1d,rfft2d,padded_rfft2d,padded_rconv2d"
+    or "padded_rconv2d"
 )
 enabled_extensions = [ext.strip() for ext in enabled_exts_str.split(",")]
 
@@ -89,7 +89,7 @@ def get_compile_args():
         "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
         "-U__CUDA_NO_HALF2_OPERATORS__",
         # Defining macro to disable CUTLASS dependencies in cuFFTDx
-        "-DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY"
+        "-DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY",
     ]
 
     # Add preprocessor definitions for enabled CUDA architectures
@@ -115,94 +115,39 @@ def get_compile_args():
         )
 
     return {
-        # "cxx": ["-O3"],
+        "cxx": ["-O3"],
         "nvcc": nvcc_args,
     }
 
 
+def get_torch_library_path():
+    """Get the path to PyTorch libraries."""
+    import torch
+    torch_path = os.path.dirname(torch.__file__)
+    return os.path.join(torch_path, 'lib')
+
+
 DEFAULT_COMPILE_ARGS = get_compile_args()
+
+# Get PyTorch library directory
+TORCH_LIB_DIR = get_torch_library_path()
 
 # Conditionally create extensions
 ext_modules = []
-
-if "cfft1d" in enabled_extensions:
-    complex_fft_1d_extension = CUDAExtension(
-        name="zipfft.cfft1d",
-        sources=["src/cuda/complex_fft_1d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(complex_fft_1d_extension)
-
-if "rfft1d" in enabled_extensions:
-    real_fft_1d_extension = CUDAExtension(
-        name="zipfft.rfft1d",
-        sources=["src/cuda/real_fft_1d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(real_fft_1d_extension)
-
-if "padded_rfft1d" in enabled_extensions:
-    padded_real_fft_1d_extension = CUDAExtension(
-        name="zipfft.padded_rfft1d",
-        sources=["src/cuda/padded_real_fft_1d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(padded_real_fft_1d_extension)
-
-if "padded_cfft1d" in enabled_extensions:
-    padded_complex_fft_1d_extension = CUDAExtension(
-        name="zipfft.padded_cfft1d",
-        sources=["src/cuda/padded_complex_fft_1d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(padded_complex_fft_1d_extension)
-
-if "strided_cfft1d" in enabled_extensions:
-    strided_complex_fft_1d_extension = CUDAExtension(
-        name="zipfft.strided_cfft1d",
-        sources=["src/cuda/strided_complex_fft_1d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(strided_complex_fft_1d_extension)
-
-# NOTE: Removed in favor of testing against 2D padded FFTs
-# if "strided_padded_cfft1d" in enabled_extensions:
-#     strided_padded_complex_fft_1d_extension = CUDAExtension(
-#         name="zipfft.strided_padded_cfft1d",
-#         sources=["src/cuda/strided_padded_complex_fft_1d_binding.cu"],
-#         include_dirs=[pybind11.get_include()],
-#         extra_compile_args=DEFAULT_COMPILE_ARGS,
-#     )
-#     ext_modules.append(strided_padded_complex_fft_1d_extension)
-
-if "rfft2d" in enabled_extensions:
-    real_fft_2d_extension = CUDAExtension(
-        name="zipfft.rfft2d",
-        sources=["src/cuda/real_fft_2d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(real_fft_2d_extension)
-
-if "padded_rfft2d" in enabled_extensions:
-    padded_real_fft_2d_extension = CUDAExtension(
-        name="zipfft.padded_rfft2d",
-        sources=["src/cuda/padded_real_fft_2d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=DEFAULT_COMPILE_ARGS,
-    )
-    ext_modules.append(padded_real_fft_2d_extension)
 
 if "padded_rconv2d" in enabled_extensions:
     padded_real_conv_2d_extension = CUDAExtension(
         name="zipfft.padded_rconv2d",
         sources=["src/cuda/real_conv_2d_binding.cu"],
         include_dirs=[pybind11.get_include()],
+        library_dirs=[TORCH_LIB_DIR],
+        libraries=[
+            "c10",
+            "torch_cpu",
+            "torch_python",
+            "c10_cuda",
+        ],
+        runtime_library_dirs=[TORCH_LIB_DIR],
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(padded_real_conv_2d_extension)

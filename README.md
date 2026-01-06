@@ -38,11 +38,11 @@ This also makes unit testing against the `pytorch.fft` module straightforward to
 ## Installation
 
 The `cuFFTDx` and associated `MathDx` libraries from NVIDIA are still under active development, so the following installation steps may be unstable.
-We currently reocmend using `conda` to manage dependencies between the packages and libaraires, although this may be different on your system.
+We currently recommend using `conda` to manage dependencies between the packages and libraries, although this may be different on your system.
+
+We are also working on providing easier installation methods for zipFFT through package managers in the future.
 
 ### 1. Create a new conda environment
-
-This environemnt will manage all the packages as well as the CUDA toolkit for compilation
 
 ```bash
 conda create -n zipfft python=3.13 -y && conda activate zipfft
@@ -50,12 +50,26 @@ conda create -n zipfft python=3.13 -y && conda activate zipfft
 
 ### 2. Install the CUDA toolkit package
 
-We have tested zipFFT with CUDA 12.9, but newer versions may be found on the (anaconda)[https://anaconda.org/nvidia/cuda-toolkit] website.
+zipFFT compiles CUDA code which gest linked to Python throught `pybind11` and PyTorch.
+This compilation step requires the CUDA toolkit to be installed on your system.
+Please see [NVIDIA Cuda toolkit](https://developer.nvidia.com/cuda-toolkit) for information about installing the CUDA toolkit on your system.
+Or contact your system administrator for help installing the CUDA toolkit.
+
+The `nvcc` compiler needs discoverable as an executable on your system PATH for the installation to succeed.
+Make sure the MathDx/cuFFTDx libraries (next step) match the CUDA toolkit version version.
+
+```bash
+# Find the nvcc compiler version
+nvcc --version
+```
+
+<!-- We have tested zipFFT with CUDA 12.9, but newer versions may be found on the (anaconda)[https://anaconda.org/nvidia/cuda-toolkit] website.
 A different version of CUDA may be installed on your system, and you should update the version accordingly
 
 ```bash
 conda install nvidia/label/cuda-12.9.1::cuda-toolkit
-```
+# conda install nvidia/label/cuda-12.9.1::cuda-toolkit
+``` -->
 
 ### 3. Install the MathDx/cuFFTDx libraries
 
