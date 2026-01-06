@@ -56,7 +56,7 @@ Please see [NVIDIA Cuda toolkit](https://developer.nvidia.com/cuda-toolkit) for 
 Or contact your system administrator for help installing the CUDA toolkit.
 
 The `nvcc` compiler needs discoverable as an executable on your system PATH for the installation to succeed.
-Make sure the MatDx/cuFFTDx libraries (next step) match the CUDA toolkit version version.
+Make sure the MathDx/cuFFTDx libraries (next step) match the CUDA toolkit version version.
 
 ```bash
 # Find the nvcc compiler version
