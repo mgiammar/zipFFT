@@ -25,7 +25,7 @@ One such problem, which motivated the development of zipFFT, is Two-Dimensional 
 
 ### Zero-padding signals for large image cross-correlation
 
-In 2DTM, small macromolecule projections (from 256×256 to 512×512 pixels) are zero-padded to match a much larger image (typically 4096×4096 pixels) before computing a 2D FFT.
+In template matching, small macromolecule projections (from 256×256 to 512×512 pixels) are zero-padded to match a much larger image (typically 4096×4096 pixels) before computing a 2D FFT.
 Standard GPU libraries like PyTorch's `torch.fft` explicitly allocate and copy zero-padded arrays before calling the FFT routine.
 This is inefficient because:
 
@@ -39,7 +39,7 @@ zipFFT exploits this problem structure to make a more efficient cross-correlatio
 if (index < SignalLength)
     register_data = global_memory[index];  // Read actual data
 else
-    register_data = 0.0;                   // Skip memory read entirely
+    register_data = 0.0;                   // Skip global memory read entirely
 ```
 
 ### Fused convolution kernel
@@ -81,118 +81,8 @@ This also makes unit testing against the `pytorch.fft` module straightforward to
 > **Note**: cuFFTDx is under active development. These instructions were tested with CUDA 12.x and MathDx 25.06.
 > **NOTE**: zipFFT is also under development and not widely tested across systems. Your mileage may vary with the following instructions.
 
-### Prerequisites
+Please see the [INSTALL.md](INSTALL.md) file for detailed installation instructions.
 
-* CUDA Toolkit installed and `nvcc` available on PATH
-* conda (recommended) or another dependency and environment manager
-
-### Quick Start
-
-<!-- The `cuFFTDx` and associated `MathDx` libraries from NVIDIA are still under active development, so the following installation steps may be unstable.
-We currently recommend using `conda` to manage dependencies between the packages and libraries, although this may be different on your system. -->
-
-<!-- We are also working on providing easier installation methods for zipFFT through package managers in the future. -->
-
-#### 1. Create a new conda environment
-
-```bash
-conda create -n zipfft python=3.13 -y && conda activate zipfft
-```
-
-#### 2. Install the CUDA toolkit package
-
-zipFFT compiles CUDA code which gest linked to Python though `pybind11` and PyTorch.
-This compilation step requires the CUDA toolkit to be installed on your system.
-Please see [NVIDIA Cuda toolkit](https://developer.nvidia.com/cuda-toolkit) for information about installing the CUDA toolkit on your system.
-Or contact your system administrator for help installing the CUDA toolkit.
-
-The `nvcc` compiler needs discoverable as an executable on your system PATH for the installation to succeed.
-Make sure the MathDx/cuFFTDx libraries (next step) match the CUDA toolkit version version.
-
-```bash
-# Find the nvcc compiler version
-nvcc --version
-```
-
-<!-- We have tested zipFFT with CUDA 12.9, but newer versions may be found on the (anaconda)[https://anaconda.org/nvidia/cuda-toolkit] website.
-A different version of CUDA may be installed on your system, and you should update the version accordingly
-
-```bash
-conda install nvidia/label/cuda-12.9.1::cuda-toolkit
-# conda install nvidia/label/cuda-12.9.1::cuda-toolkit
-``` -->
-
-#### 3. Install the MathDx/cuFFTDx libraries
-
-Follow the instructions on the [cuFFTDx Download page](https://developer.nvidia.com/cufftdx-downloads) to download and install the `MathDx` and `cuFFTDx` libraries.
-For example downloading the tarball for CUDA 12.x, extracting it, and moving the headers to `$CONDA_PREFIX/include/` would look like:
-
-```bash
-# Download MathDx/cuFFTDx headers
-wget https://developer.nvidia.com/downloads/compute/cuFFTDx/redist/cuFFTDx/cuda13/nvidia-mathdx-25.06.1-cuda13.tar.gz
-tar -xzf nvidia-mathdx-*.tar.gz
-```
-
-Next, move the include files to the conda environment's include directory
-
-```bash
-mv nvidia-mathdx-25.06.1/nvidia/mathdx/25.06/include/* $CONDA_PREFIX/include/
-```
-
-(optional) remove the rest of the extracted files and tarball
-
-```bash
-rm -rf nvidia-mathdx-25.06.1 nvidia-mathdx-*.tar.gz
-```
-
-#### 4. Install necessary PyTorch version and other Python dependencies
-
-```bash
-python -m pip install torch torchvision
-python -m pip install pytest pyyaml
-```
-
-#### 5. Run local install
-
-Installation from source is currently the only way to install zipFFT.
-However, all dependencies in the installation process should be automatically managed by zipFFT and conda.
-
-```bash
-pip install -e .
-```
-
-### Targeting specific CUDA architectures and modules to speed up compilation
-
-The heavily-templated code can take a long time to compile.
-To speed this up, specify your GPU architecture and/or limit which modules are built:
-
-<!-- 
-Compiling the entire zipFFT package can take a long time because of the heavily templated nature of the code and the additional testing/development specific modules compiled by default.
-Selecting only a specific CUDA architecture and/or a subset of modules to compile can significantly speed up the installation process.
-To select a CUDA architecture, set teh environment variable `CUDA_ARCHITECTURES` to a comma-separated list of architectures before running the installation. -->
-
-```bash
-# Target only a specific GPU architecture
-export CUDA_ARCHITECTURES=8.9  # For Ada generation GPUs
-```
-
-```bash
-# Build only the 2D convolution module
-export ENABLED_EXTENSIONS=padded_rconv2d
-```
-
-Then run the installation again
-
-```bash
-pip install -e .
-```
-
-<!-- Similarly, a subset of modules can be selected by setting the `ENABLED_EXTENSIONS` environment variable to a comma-separated list of module names.
-If you are only interested in the 2D convolution/cross-correlation functions, you can set this variable as follows:
-
-```bash
-export ENABLED_EXTENSIONS=padded_rconv2d
-``` -->
 
 ## Brief usage example
 

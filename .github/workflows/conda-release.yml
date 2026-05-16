@@ -1,0 +1,38 @@
+name: Validate conda recipe
+
+# Checks that the conda recipe renders without errors on every push and PR.
+# No build or upload step — packages are always compiled on the user's machine.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate conda recipe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.12"
+          auto-activate-base: true
+          channels: nvidia,pytorch,conda-forge
+          channel-priority: strict
+
+      - name: Install conda-build
+        shell: bash -el {0}
+        run: conda install -y conda-build
+
+      - name: Render recipe (syntax check)
+        shell: bash -el {0}
+        env:
+          ZIPFFT_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.0.0.dev0' }}
+        run: conda render conda-recipe/ -c nvidia -c pytorch

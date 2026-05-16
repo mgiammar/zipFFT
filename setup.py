@@ -77,6 +77,12 @@ if DEBUG_PRINT:
 # fmt: on
 
 
+def get_extra_include_dirs():
+    """Allow callers (e.g. conda build.sh) to inject additional include paths."""
+    raw = os.environ.get("EXTRA_INCLUDE_DIRS", "")
+    return [d for d in raw.split(os.pathsep) if d]
+
+
 def get_compile_args():
     """Generate compile arguments including CUDA architectures."""
     nvcc_args = [
@@ -139,7 +145,7 @@ if "padded_rconv2d" in enabled_extensions:
     padded_real_conv_2d_extension = CUDAExtension(
         name="zipfft.padded_rconv2d",
         sources=["src/cuda/real_conv_2d_binding.cu"],
-        include_dirs=[pybind11.get_include()],
+        include_dirs=[pybind11.get_include()] + get_extra_include_dirs(),
         library_dirs=[TORCH_LIB_DIR],
         libraries=[
             "c10",
