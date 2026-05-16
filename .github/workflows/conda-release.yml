@@ -35,4 +35,4 @@ jobs:
         shell: bash -el {0}
         env:
           ZIPFFT_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.0.0.dev0' }}
-        run: conda render conda-recipe/ -c nvidia -c pytorch
+        run: conda-build --output conda-recipe/ -c nvidia -c pytorch
