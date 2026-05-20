@@ -5,9 +5,27 @@ import pybind11
 import argparse
 import sys
 import os
+import shutil
+
+# Auto-detect CUDA_HOME before importing torch so that cpp_extension.CUDA_HOME
+# is initialized correctly. In conda build environments the host PyTorch may be
+# a CPU-only build (torch.cuda._is_compiled() == False), which causes
+# cpp_extension.CUDA_HOME to be forced to None regardless of env vars.
+# Detecting nvcc here and patching after import works around this.
+if not os.environ.get("CUDA_HOME") and not os.environ.get("CUDA_PATH"):
+    _nvcc = shutil.which("nvcc")
+    if _nvcc:
+        os.environ["CUDA_HOME"] = os.path.dirname(os.path.dirname(_nvcc))
 
 import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+import torch.utils.cpp_extension as _cpp_ext
+
+# If the host PyTorch is a CPU-only build, cpp_extension.CUDA_HOME is None
+# even when CUDA is available. Patch it so CUDAExtension() can construct the
+# extension object during pip's metadata-generation phase.
+if _cpp_ext.CUDA_HOME is None and os.environ.get("CUDA_HOME"):
+    _cpp_ext.CUDA_HOME = os.environ["CUDA_HOME"]
 
 __version__ = "0.0.3alpha"
 

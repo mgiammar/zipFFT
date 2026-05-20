@@ -15,8 +15,7 @@ package:
   version: {{ version }}
 
 source:
-  git_url: https://github.com/mgiammar/zipFFT.git
-  git_tag: v{{ version }}
+  path: ..
 
 build:
   number: 0
@@ -30,17 +29,18 @@ build:
 requirements:
   build:
     - {{ compiler('cxx') }}
-    - {{ compiler('cuda') }}    # provides nvcc; version is set by the conda-build channel pin
+    - cuda-nvcc
+    - cuda-libraries-dev
   host:
     - python >=3.12
     - pip
     - setuptools >=61.0
     - pybind11
-    - pytorch >=2.7.0
-    - pytorch-cuda               # ensures a CUDA-enabled PyTorch is selected
-    - cufftdx                    # NVIDIA header-only library (nvidia channel)
+    - pytorch >=2.7.0 *cuda*
+    - conda-forge::mathdx >=25.06.0
   run:
     - python >=3.12
+    - numpy
     # Pin to the exact PyTorch major.minor compiled against to avoid ABI mismatches.
     - {{ pin_compatible('pytorch', max_pin='x.x') }}
 

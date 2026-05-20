@@ -4,11 +4,10 @@ zipFFT compiles CUDA kernels at install time, so all installation paths require 
 
 Two installation paths are supported:
 
-- **[Path 1 — pip from source](#path-1--pip-from-source)**: manual dependency setup followed by `pip install`. Most flexible if you need to customize parts of the build process (e.g. custom CUDA flags, non-conda Python environment, etc.) but requires more manual steps.
-- **[Path 2 — conda recipe](#path-2--conda-recipe)**: conda manages the build-time dependencies (CUDA toolkit, cuFFTDx headers, PyTorch) and then compiles on your machine. Recommended for most users.
+- **[Path 1 — conda recipe](#path-1--conda-recipe)**: conda manages the build-time dependencies (CUDA toolkit, cuFFTDx headers, PyTorch) and then compiles on your machine. Recommended for most users.
+- **[Path 2 — pip from source](#path-2--pip-from-source)**: manual dependency setup followed by `pip install`. Most flexible if you need to customize parts of the build process (e.g. custom CUDA flags, non-conda Python environment, etc.) but requires more manual steps.
 
-Both paths compile the CUDA kernels locally, so the resulting binary is always
-matched to your GPU architecture and installed toolchain.
+Both paths compile the CUDA kernels locally, so the resulting binary is always matched to your GPU architecture and installed toolchain.
 
 ---
 
@@ -18,14 +17,74 @@ matched to your GPU architecture and installed toolchain.
 - CUDA Toolkit 12.x with `nvcc` on `PATH`
 - Python >= 3.12
 
+### Clone the repository
+
+```bash
+git clone https://github.com/mgiammar/zipFFT.git
+cd zipFFT
+```
+
+### Create a new Python environment (optional but recommended)
+
+Adjust this command depending on where you want to install zipFFT and what environment manager is available.
+
+```bash
+conda create -n zipfft python=3.14 -y
+conda activate zipfft
+```
+
+### Select GPU architecture to build against (optional)
+
+To speed up compilation and reduce binary size, set the `CUDA_ARCHITECTURES` environment variable to target only your GPU's compute capability. A list of compute architectures by GPU can be found here: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
+
+```bash
+export CUDA_ARCHITECTURES=8.9  # for Ada Lovelace GPUs (e.g. RTX A6000 ada)
+# export CUDA_ARCHITECTURES=12.0  # for Blackwell GPUs (e.g. RTX 6000 blackwell)
+```
+
 ---
 
-## Path 1 — pip from source
+## Path 1 — conda recipe
+
+conda resolves cuFFTDx headers, PyTorch, etc. automatically before compiling zipFFT on your machine.
+
+### 1. Install conda-build
+
+```bash
+conda install -y conda-build
+```
+
+### 2. Build the conda package
+
+`conda build` must write to the base conda-bld directory so that `--use-local` can find the package regardless of which env is currently active. Pass `--croot` to enforce this:
+
+```bash
+conda build --croot $(conda info --base)/conda-bld conda-recipe/ -c nvidia -c pytorch -c conda-forge
+```
+
+### 3. Install the locally-built package with its dependencies
+
+```bash
+conda install --use-local zipfft -c pytorch -c nvidia -c conda-forge
+```
+
+## Verifying the installation
+
+```bash
+python -c "import zipfft; print('zipfft OK')"
+pytest
+```
+
+Tests for any extension not compiled during installation are skipped automatically.
+
+---
+
+## Path 2 — pip from source
 
 ### 1. Create and activate an environment
 
 ```bash
-conda create -n zipfft python=3.12 -y
+conda create -n zipfft python=3.14 -y
 conda activate zipfft
 ```
 
@@ -71,64 +130,3 @@ CUDA_ARCHITECTURES=8.9 ENABLED_EXTENSIONS=padded_rconv2d pip install -e .
 ```
 
 ---
-
-## Path 2 — conda recipe
-
-conda resolves and installs the CUDA toolkit, cuFFTDx headers, and PyTorch automatically before compiling zipFFT on your machine.
-
-### 1. Install conda-build
-
-```bash
-conda install -y conda-build
-```
-
-### 2. Clone the repository
-
-```bash
-git clone https://github.com/mgiammar/zipFFT.git
-cd zipFFT
-```
-
-For a specific release, check out the corresponding tag:
-
-```bash
-git checkout v0.1.0
-```
-
-### 3. Build the conda package
-
-```bash
-conda build conda-recipe/ -c nvidia -c pytorch
-```
-
-To target a specific GPU architecture and reduce compile time (see this list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/))
-
-```bash
-CUDA_ARCHITECTURES=8.9 conda build conda-recipe/ -c nvidia -c pytorch
-```
-
-You can also restrict which extensions are compiled:
-
-```bash
-ENABLED_EXTENSIONS=padded_rconv2d conda build conda-recipe/ -c nvidia -c pytorch
-```
-
-Both variables can be combined.
-
-### 4. Install the locally-built package
-
-```bash
-conda install --use-local zipfft
-```
-
----
-
-## Verifying the installation
-
-```bash
-python -c "import zipfft; print('zipfft OK')"
-pytest
-```
-
-Tests for any extension not compiled during installation are skipped
-automatically.
