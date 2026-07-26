@@ -78,7 +78,7 @@ cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 enabled_exts_str = (
     parsed_args.enable_extensions
     or os.environ.get("ENABLED_EXTENSIONS")
-    or "padded_rconv2d"
+    or "padded_rconv2d,padded_cconv2d"
 )
 enabled_extensions = [ext.strip() for ext in enabled_exts_str.split(",")]
 
@@ -175,6 +175,23 @@ if "padded_rconv2d" in enabled_extensions:
         extra_compile_args=DEFAULT_COMPILE_ARGS,
     )
     ext_modules.append(padded_real_conv_2d_extension)
+
+if "padded_cconv2d" in enabled_extensions:
+    padded_complex_conv_2d_extension = CUDAExtension(
+        name="zipfft.padded_cconv2d",
+        sources=["src/cuda/complex_conv_2d_binding.cu"],
+        include_dirs=[pybind11.get_include()] + get_extra_include_dirs(),
+        library_dirs=[TORCH_LIB_DIR],
+        libraries=[
+            "c10",
+            "torch_cpu",
+            "torch_python",
+            "c10_cuda",
+        ],
+        runtime_library_dirs=[TORCH_LIB_DIR],
+        extra_compile_args=DEFAULT_COMPILE_ARGS,
+    )
+    ext_modules.append(padded_complex_conv_2d_extension)
 
 # Write build configuration to a file for testing
 build_config = {

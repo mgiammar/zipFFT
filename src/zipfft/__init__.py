@@ -13,6 +13,7 @@ __version__ = "0.0.3alpha"
 #     padded_rconv2d = None
 
 from . import padded_rconv2d
+from . import padded_cconv2d
 
 # Load build config if available
 try:
@@ -42,4 +43,5 @@ __all__ = [
     "get_available_extensions",
     "get_cuda_architectures",
     "padded_rconv2d",
+    "padded_cconv2d",
 ]
