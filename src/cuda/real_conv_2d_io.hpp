@@ -16,7 +16,7 @@ namespace zipfft {
 
 template <dimension Dim, bool Forward, int Batches, class FFTX_, class IFFTX_, class FFTY_,
           class IFFTY_, unsigned int SignalLengthX, unsigned int SignalLengthY,
-          unsigned int FFTSizeX, unsigned int FFTSizeY>
+          unsigned int FFTSizeX, unsigned int FFTSizeY, bool UseTiledSwizzledIO = false>
 struct io_conv {
     // Convolution happens in the Y dimension (C2C transform)
     static constexpr bool is_r2c_conv =
@@ -194,6 +194,147 @@ struct io_conv {
         }
     }
 
+    // --- Tiled + swizzled strided load/store ---
+    //
+    // load_strided/store_strided above access global memory with a per-thread stride of
+    // `Stride` (=x_dim) elements between consecutive threadIdx.x values, which for large x_dim
+    // means each warp lane lands in its own, mostly-empty 32-byte sector (~25% sector
+    // utilization; confirmed via ncu on the production kernel).
+    //
+    // Fix: stage each row-band (FFT::stride rows x FFT::ffts_per_block columns) through shared
+    // memory. The piece that talks to *global* memory remaps thread->address so that
+    // FFT::ffts_per_block contiguous columns (contiguous in the row-major array) are handled by
+    // consecutive threads, filling each 32-byte sector completely. The piece that talks to
+    // *registers* keeps the natural per-thread (row, col) ownership cuFFTDx expects.
+    //
+    // The natural-layout shared access has a constant per-thread stride of FFT::ffts_per_block
+    // complex (8-byte) elements; decomposed into 32-bit bank accesses this causes an 8-way bank
+    // conflict when FFT::ffts_per_block is a small power of two. Fixed by storing real/imag
+    // components in separate (structure-of-arrays) float buffers, each padded to a row stride of
+    // FFT::ffts_per_block+1 elements -- coprime with the 32 shared memory banks, which makes the
+    // per-thread bank mapping a bijection (mathematically conflict-free), not just reduced.
+    //
+    // Requires FFT::ffts_per_block to be even (so that +1 padding is odd, hence coprime with the
+    // power-of-two bank count); enforced via static_assert below. Callers on devices/configs
+    // that cannot afford FFT::ffts_per_block >= 2 (e.g. insufficient shared memory at very large
+    // FFT sizes) should instantiate io_conv with UseTiledSwizzledIO=false to fall back to the
+    // plain strided path above -- the static_assert here only fires for instantiations that are
+    // actually selected via `if constexpr`, so the fallback path never triggers it.
+    //
+    // `smem_scratch` must point to a caller-allocated shared memory region of at least
+    // `2 * FFT::stride * (FFT::ffts_per_block + 1) * sizeof(float)` bytes, and must not be
+    // concurrently in use by anything else while this function runs (see complex_conv_2d.cuh's
+    // fused Y-kernel, which reuses the FFT's own execution shared memory buffer for this, since
+    // the timing never overlaps).
+    template <class FFT, typename GmemType, typename RmemType, class LoadOp = zipfft::identity,
+              int BatchOffset, int BlockOffset, int Stride, bool IsPadded, int SignalLength>
+    __device__ __forceinline__ void load_strided_tiled_swizzled(const GmemType* gmem,
+                                                                RmemType* rmem,
+                                                                GmemType* smem_scratch,
+                                                                LoadOp op = {}) {
+        using input_t = typename FFT::input_type;
+
+        static_assert(sizeof(input_t) == sizeof(GmemType),
+                      "Tiled strided load not implemented for non-matching types.");
+        static_assert(FFT::ffts_per_block % 2 == 0,
+                      "Tiled swizzled IO requires an even FFT::ffts_per_block (needed for the "
+                      "coprime-padding bank-conflict-free guarantee).");
+
+        constexpr unsigned int tile = FFT::ffts_per_block;
+        constexpr unsigned int padded_tile = tile + 1;
+
+        float* smem_re = reinterpret_cast<float*>(smem_scratch);
+        float* smem_im = smem_re + FFT::stride * padded_tile;
+
+        const unsigned int tx = threadIdx.x;
+        const unsigned int ty = threadIdx.y;
+        const unsigned int tid = ty * FFT::stride + tx;
+        const unsigned int local_row = tid / tile;
+        const unsigned int local_col = tid % tile;
+
+        const unsigned int base_index = blockIdx.x * BlockOffset + blockIdx.y * BatchOffset;
+
+#pragma unroll
+        for (unsigned int i = 0; i < FFT::input_ept; ++i) {
+            // Coalesced global READ using the remapped thread->address (fills whole sectors).
+            const unsigned int global_row_remap = i * FFT::stride + local_row;
+            if (global_row_remap < FFT::input_length) {
+                const unsigned int gmem_index = base_index + global_row_remap * Stride + local_col;
+                if (global_row_remap < SignalLength) {
+                    input_t v = op(reinterpret_cast<const input_t*>(gmem)[gmem_index]);
+                    smem_re[local_row * padded_tile + local_col] = reinterpret_cast<float*>(&v)[0];
+                    smem_im[local_row * padded_tile + local_col] = reinterpret_cast<float*>(&v)[1];
+                } else if (IsPadded) {
+                    smem_re[local_row * padded_tile + local_col] = 0.0f;
+                    smem_im[local_row * padded_tile + local_col] = 0.0f;
+                }
+            }
+            __syncthreads();
+
+            // Gather using the natural per-thread (row, col) ownership cuFFTDx expects.
+            const unsigned int local_fft_element = i * FFT::stride + tx;
+            if (local_fft_element < FFT::input_length) {
+                input_t val;
+                reinterpret_cast<float*>(&val)[0] = smem_re[tx * padded_tile + ty];
+                reinterpret_cast<float*>(&val)[1] = smem_im[tx * padded_tile + ty];
+                reinterpret_cast<input_t*>(rmem)[i] = val;
+            }
+            __syncthreads();
+        }
+    }
+
+    template <class FFT, typename GmemType, typename RmemType, class StoreOp = zipfft::identity,
+              int BatchOffset, int BlockOffset, int Stride, bool IsPadded, int ValidLength>
+    __device__ __forceinline__ void store_strided_tiled_swizzled(const RmemType* rmem,
+                                                                 GmemType* gmem,
+                                                                 GmemType* smem_scratch,
+                                                                 StoreOp op = {}) {
+        using output_t = typename FFT::output_type;
+
+        static_assert(sizeof(output_t) == sizeof(GmemType),
+                      "Tiled strided store not implemented for non-matching types.");
+        static_assert(FFT::ffts_per_block % 2 == 0,
+                      "Tiled swizzled IO requires an even FFT::ffts_per_block (needed for the "
+                      "coprime-padding bank-conflict-free guarantee).");
+
+        constexpr unsigned int tile = FFT::ffts_per_block;
+        constexpr unsigned int padded_tile = tile + 1;
+
+        float* smem_re = reinterpret_cast<float*>(smem_scratch);
+        float* smem_im = smem_re + FFT::stride * padded_tile;
+
+        const unsigned int tx = threadIdx.x;
+        const unsigned int ty = threadIdx.y;
+        const unsigned int tid = ty * FFT::stride + tx;
+        const unsigned int local_row = tid / tile;
+        const unsigned int local_col = tid % tile;
+
+        const unsigned int base_index = blockIdx.x * BlockOffset + blockIdx.y * BatchOffset;
+
+#pragma unroll
+        for (unsigned int i = 0; i < FFT::output_ept; ++i) {
+            // Stage using the natural per-thread (row, col) ownership cuFFTDx produced.
+            const unsigned int local_fft_element = i * FFT::stride + tx;
+            if (local_fft_element < FFT::output_length) {
+                output_t val = op(reinterpret_cast<const output_t*>(rmem)[i]);
+                smem_re[tx * padded_tile + ty] = reinterpret_cast<float*>(&val)[0];
+                smem_im[tx * padded_tile + ty] = reinterpret_cast<float*>(&val)[1];
+            }
+            __syncthreads();
+
+            // Coalesced global WRITE using the remapped thread->address (fills whole sectors).
+            const unsigned int global_row_remap = i * FFT::stride + local_row;
+            if (global_row_remap < FFT::output_length && global_row_remap < ValidLength) {
+                const unsigned int gmem_index = base_index + global_row_remap * Stride + local_col;
+                output_t out;
+                reinterpret_cast<float*>(&out)[0] = smem_re[local_row * padded_tile + local_col];
+                reinterpret_cast<float*>(&out)[1] = smem_im[local_row * padded_tile + local_col];
+                reinterpret_cast<output_t*>(gmem)[gmem_index] = out;
+            }
+            __syncthreads();
+        }
+    }
+
     //////////////////////////////////////////////////////
     /// Abstracted functions for load/store operations ///
     //////////////////////////////////////////////////////
@@ -214,7 +355,8 @@ struct io_conv {
      */
     template <typename GmemType, typename RmemType, class LoadOp = zipfft::identity>
     __device__ __forceinline__ void load_gmem_to_rmem(const GmemType* gmem, RmemType* rmem,
-                                                      LoadOp op = {}) {
+                                                      LoadOp op = {},
+                                                      GmemType* smem_scratch = nullptr) {
         // Along the strided dimension (Y)
         if constexpr (Dim == dimension::y) {
             constexpr bool is_load_padded = is_y_padded and Forward;
@@ -230,8 +372,14 @@ struct io_conv {
             constexpr int signal_length = (Forward) ? signal_length_y : fft_size_y;
             // clang-format on
 
-            load_strided<FFTY, GmemType, RmemType, LoadOp, batch_offset, block_offset, stride,
-                         is_load_padded, signal_length>(gmem, rmem, op);
+            if constexpr (UseTiledSwizzledIO) {
+                load_strided_tiled_swizzled<FFTY, GmemType, RmemType, LoadOp, batch_offset,
+                                            block_offset, stride, is_load_padded, signal_length>(
+                    gmem, rmem, smem_scratch, op);
+            } else {
+                load_strided<FFTY, GmemType, RmemType, LoadOp, batch_offset, block_offset, stride,
+                             is_load_padded, signal_length>(gmem, rmem, op);
+            }
         } else {  // Along the contiguous dimension (X)
             constexpr bool is_load_padded = is_x_padded and Forward;
 
@@ -256,7 +404,8 @@ struct io_conv {
 
     template <typename GmemType, typename RmemType, class StoreOp = zipfft::identity>
     __device__ __forceinline__ void store_rmem_to_gmem(GmemType* gmem, const RmemType* rmem,
-                                                       StoreOp op = {}) {
+                                                       StoreOp op = {},
+                                                       GmemType* smem_scratch = nullptr) {
         // Along the strided dimension (Y)
         if constexpr (Dim == dimension::y) {
             constexpr bool is_store_padded = is_y_padded and not Forward;
@@ -277,12 +426,25 @@ struct io_conv {
             // to maintain consistency with cuFFT behavior
             if constexpr (!Forward) {
                 zipfft::divide_by_scalar<float> norm_op(static_cast<float>(FFTSizeY));
-                store_strided<FFTY, GmemType, RmemType, zipfft::divide_by_scalar<float>,
-                              batch_offset, block_offset, stride, is_store_padded, valid_length>(
-                    rmem, gmem, norm_op);
+                if constexpr (UseTiledSwizzledIO) {
+                    store_strided_tiled_swizzled<
+                        FFTY, GmemType, RmemType, zipfft::divide_by_scalar<float>, batch_offset,
+                        block_offset, stride, is_store_padded, valid_length>(rmem, gmem,
+                                                                             smem_scratch, norm_op);
+                } else {
+                    store_strided<FFTY, GmemType, RmemType, zipfft::divide_by_scalar<float>,
+                                  batch_offset, block_offset, stride, is_store_padded,
+                                  valid_length>(rmem, gmem, norm_op);
+                }
             } else {
-                store_strided<FFTY, GmemType, RmemType, StoreOp, batch_offset, block_offset, stride,
-                              is_store_padded, valid_length>(rmem, gmem, op);
+                if constexpr (UseTiledSwizzledIO) {
+                    store_strided_tiled_swizzled<FFTY, GmemType, RmemType, StoreOp, batch_offset,
+                                                 block_offset, stride, is_store_padded,
+                                                 valid_length>(rmem, gmem, smem_scratch, op);
+                } else {
+                    store_strided<FFTY, GmemType, RmemType, StoreOp, batch_offset, block_offset,
+                                  stride, is_store_padded, valid_length>(rmem, gmem, op);
+                }
             }
         } else {  // Along the contiguous dimension (X)
             constexpr bool is_store_padded = is_x_padded and not Forward;

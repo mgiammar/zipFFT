@@ -46,11 +46,17 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
         (blockIdx.x * FFT_fwd::ffts_per_block * fft_length_y) +
         (blockIdx.y * 0);  // Only one image being convolved across batches
 
+    // Declared up front (rather than just before FFT_fwd::execute) since IO_Handler_fwd's
+    // tiled+swizzled load path (when enabled) reuses this same buffer as scratch space before
+    // the FFT ever touches it. Safe to share: the load's own __syncthreads() calls guarantee
+    // every thread is done reading from shared memory before FFT_fwd::execute() starts writing
+    // to it, and FFT_fwd/FFT_inv already reuse this same buffer sequentially further down.
+    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+
     // Local array for FFT thread execution
     complex_type thread_data[FFT_fwd::storage_size];
-    io_handler_fwd.load_gmem_to_rmem(data, thread_data);
+    io_handler_fwd.load_gmem_to_rmem(data, thread_data, {}, shared_mem);
 
-    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
     FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
 
     // Point-wise multiply in the frequency domain using FMA for higher precision
@@ -79,7 +85,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
     // FFT_inv execution
     FFT_inv().execute(thread_data, shared_mem, workspace_inv);
 
-    io_handler_inv.store_rmem_to_gmem(data, thread_data);
+    io_handler_inv.store_rmem_to_gmem(data, thread_data, {}, shared_mem);
 }
 
 // --- Convolution/Cross-correlation 2D FFT Launcher ---
@@ -118,7 +124,7 @@ template <unsigned int Arch, unsigned int FFTSizeX, unsigned int FFTSizeY, unsig
           unsigned int SignalLengthX, unsigned int SignalLengthY,
           unsigned int elements_per_thread_x = 0, unsigned int elements_per_thread_y = 0,
           unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0,
-          bool CrossCorrelate = false>
+          bool CrossCorrelate = false, bool UseTiledSwizzledIO = false>
 inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* fft_workspace,
                                                   const float2* conv_data, float2* output_data,
                                                   int device, cudaStream_t stream) {
@@ -186,12 +192,26 @@ inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* ff
 
     // Define IO handlers for each kernel. Reuses zipfft::io_conv from the real-valued path since
     // it is already generic over both the r2c/c2r and c2c/c2c combinations (see is_c2c_conv).
+    // UseTiledSwizzledIO is only applied to the Y-dimension (strided) handlers -- the X-dimension
+    // (contiguous) load/store is already coalesced and doesn't benefit from tiling.
     // clang-format off
     using IO_X_fwd = zipfft::io_conv<zipfft::dimension::x, true,  Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
-    using IO_Y_fwd = zipfft::io_conv<zipfft::dimension::y, true,  Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
-    using IO_Y_inv = zipfft::io_conv<zipfft::dimension::y, false, Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
+    using IO_Y_fwd = zipfft::io_conv<zipfft::dimension::y, true,  Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, UseTiledSwizzledIO>;
+    using IO_Y_inv = zipfft::io_conv<zipfft::dimension::y, false, Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, UseTiledSwizzledIO>;
     using IO_X_inv = zipfft::io_conv<zipfft::dimension::x, false, Batch, FFTX_fwd, FFTX_inv, FFTY_fwd, FFTY_inv, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY>;
     // clang-format on
+
+    // Tiled+swizzled Y I/O requires an even FFTs_per_block (see real_conv_2d_io.hpp)
+    // static_assert here for a clear top-level error message before it would
+    // otherwise surface as an obscure failure deep in the IO handler.
+    if constexpr (UseTiledSwizzledIO) {
+        static_assert(FFTY_fwd::ffts_per_block % 2 == 0 && FFTY_fwd::ffts_per_block >= 2,
+                      "UseTiledSwizzledIO requires FFTs_per_block_y to be set to an even number "
+                      ">= 2 (e.g. 4); pass FFTs_per_block_y explicitly instead of leaving it at "
+                      "the cuFFTDx-auto-selected default, and set UseTiledSwizzledIO=false on "
+                      "devices/configs that cannot afford the resulting shared memory/occupancy "
+                      "cost.");
+    }
 
     // 4. Construct the kernel pointers and associated attributes
     auto kernel_c2c_x_fwd = padded_block_fft_c2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
@@ -200,12 +220,28 @@ inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* ff
                                                             CrossCorrelate>;
     auto kernel_c2c_x_inv = padded_block_fft_c2c_1d_kernel_with_layout<FFTX_inv, IO_X_inv>;
 
+    // The tiled+swizzled Y IO reuses the FFT's own shared memory buffer as scratch space (see
+    // strided_padded_block_conv_c2c_2d_kernel_with_layout), so the Y-kernel's shared memory
+    // allocation must be at least as large as that scratch requirement in addition to whatever
+    // FFTY_fwd/FFTY_inv themselves need.
+    constexpr unsigned int tiled_io_scratch_bytes =
+        UseTiledSwizzledIO ? 2u * FFTY_fwd::stride * (FFTY_fwd::ffts_per_block + 1u) * sizeof(float)
+                           : 0u;
+    constexpr unsigned int y_shared_mem_size =
+        (FFTY_fwd::shared_memory_size > FFTY_inv::shared_memory_size
+             ? FFTY_fwd::shared_memory_size
+             : FFTY_inv::shared_memory_size) > tiled_io_scratch_bytes
+            ? (FFTY_fwd::shared_memory_size > FFTY_inv::shared_memory_size
+                   ? FFTY_fwd::shared_memory_size
+                   : FFTY_inv::shared_memory_size)
+            : tiled_io_scratch_bytes;
+
     // Increase shared memory size to maximum of the three kernels
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(kernel_c2c_x_fwd,
                                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                                              FFTX_fwd::shared_memory_size));
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(
-        kernel_c2c_y, cudaFuncAttributeMaxDynamicSharedMemorySize, FFTY_fwd::shared_memory_size));
+        kernel_c2c_y, cudaFuncAttributeMaxDynamicSharedMemorySize, y_shared_mem_size));
     CUDA_CHECK_AND_EXIT(cudaFuncSetAttribute(kernel_c2c_x_inv,
                                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                                              FFTX_inv::shared_memory_size));
@@ -243,7 +279,7 @@ inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* ff
         input_data_cast, fft_workspace_cast, workspace_fwd_x);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
-    kernel_c2c_y<<<grid_dim_fwd_y, FFTY_fwd::block_dim, FFTY_fwd::shared_memory_size, stream>>>(
+    kernel_c2c_y<<<grid_dim_fwd_y, FFTY_fwd::block_dim, y_shared_mem_size, stream>>>(
         fft_workspace_cast, conv_data_cast, workspace_fwd_y, workspace_inv_y);
     CUDA_CHECK_AND_EXIT(cudaGetLastError());
 
@@ -256,7 +292,8 @@ inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* ff
 template <typename ComplexType, unsigned int SignalLengthX, unsigned int SignalLengthY,
           unsigned int FFTSizeX, unsigned int FFTSizeY, unsigned int Batch, bool CrossCorrelate,
           unsigned int elements_per_thread_x = 0, unsigned int elements_per_thread_y = 0,
-          unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0>
+          unsigned int FFTs_per_block_x = 0, unsigned int FFTs_per_block_y = 0,
+          bool UseTiledSwizzledIO = false>
 int padded_block_complex_conv_2d(ComplexType* input_data, ComplexType* fft_workspace,
                                  const ComplexType* conv_data, ComplexType* output_data, int device,
                                  cudaStream_t stream) {
@@ -265,22 +302,22 @@ int padded_block_complex_conv_2d(ComplexType* input_data, ComplexType* fft_works
     /* clang-format off */
     switch (arch) {
 #ifdef ENABLE_CUDA_ARCH_800
-        case 800: padded_block_complex_conv_2d_launcher<800, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 800: padded_block_complex_conv_2d_launcher<800, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_860
-        case 860: padded_block_complex_conv_2d_launcher<860, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 860: padded_block_complex_conv_2d_launcher<860, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_870
-        case 870: padded_block_complex_conv_2d_launcher<870, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 870: padded_block_complex_conv_2d_launcher<870, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_890
-        case 890: padded_block_complex_conv_2d_launcher<890, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 890: padded_block_complex_conv_2d_launcher<890, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #ifdef ENABLE_CUDA_ARCH_900
-        case 900: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 900: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
 #if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
-        case 1200: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 1200: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch

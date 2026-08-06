@@ -48,7 +48,7 @@ struct PaddedComplexConvConfig2D {
 // Define supported convolution configurations
 // (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)
 static constexpr std::array<
-    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 18>
+    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 34>
     SUPPORTED_C2C_CONV_CONFIGS = {{
         // Convolution configurations (TEST CONFIGURATIONS)
         {48, 48, 64, 64, 1, false},      // (48, 48) -> (64, 64), batch=1
@@ -71,6 +71,24 @@ static constexpr std::array<
         {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
         {16, 16, 64, 64, 1, true},      // (16, 16) -> (64, 64), batch=1
         {32, 32, 128, 128, 1, true},    // (32, 32) -> (128, 128), batch=1
+
+        // Cross-correlation configurations (DEMO: signal_length x image_size sweep)
+        {128, 128, 1024, 1024, 1, true},  // (128, 128) -> (1024, 1024), batch=1
+        {128, 128, 2048, 2048, 1, true},  // (128, 128) -> (2048, 2048), batch=1
+        {128, 128, 4096, 4096, 1, true},  // (128, 128) -> (4096, 4096), batch=1
+        {128, 128, 8192, 8192, 1, true},  // (128, 128) -> (8192, 8192), batch=1
+        {256, 256, 1024, 1024, 1, true},  // (256, 256) -> (1024, 1024), batch=1
+        {256, 256, 2048, 2048, 1, true},  // (256, 256) -> (2048, 2048), batch=1
+        {256, 256, 4096, 4096, 1, true},  // (256, 256) -> (4096, 4096), batch=1
+        {256, 256, 8192, 8192, 1, true},  // (256, 256) -> (8192, 8192), batch=1
+        {384, 384, 1024, 1024, 1, true},  // (384, 384) -> (1024, 1024), batch=1
+        {384, 384, 2048, 2048, 1, true},  // (384, 384) -> (2048, 2048), batch=1
+        {384, 384, 4096, 4096, 1, true},  // (384, 384) -> (4096, 4096), batch=1
+        {384, 384, 8192, 8192, 1, true},  // (384, 384) -> (8192, 8192), batch=1
+        {512, 512, 1024, 1024, 1, true},  // (512, 512) -> (1024, 1024), batch=1
+        {512, 512, 2048, 2048, 1, true},  // (512, 512) -> (2048, 2048), batch=1
+        {512, 512, 4096, 4096, 1, true},  // (512, 512) -> (4096, 4096), batch=1
+        {512, 512, 8192, 8192, 1, true},  // (512, 512) -> (8192, 8192), batch=1
     }};
 
 // Template dispatch functions for each supported configuration
