@@ -31,7 +31,7 @@ if zipfft.padded_cconv2d is not None:
     ]
 
 NUM_TEST_REPEATS = 10
-RTOL = 3e1  # NOTE: Effectively no rtol since numerical differences affect small values
+RTOL = 1e-3
 ATOL = 5e-6
 
 

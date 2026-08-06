@@ -95,10 +95,35 @@ if DEBUG_PRINT:
 # fmt: on
 
 
+def get_mathdx_include_dir():
+    """Locate cuFFTDx/MathDx headers bundled in `nvidia-mathdx` pkg, if installed."""
+    try:
+        import nvidia.mathdx
+    except ImportError:
+        return None
+
+    for search_path in nvidia.mathdx.__path__:
+        include_dir = os.path.join(search_path, "include")
+        if os.path.isdir(include_dir):
+            return include_dir
+    return None
+
+
 def get_extra_include_dirs():
-    """Allow callers (e.g. conda build.sh) to inject additional include paths."""
+    """Collect additional include paths.
+    
+    - explicit EXTRA_INCLUDE_DIRS (e.g. conda build.sh pointing at conda-forge's mathdx
+      package)
+    - an auto-detected `nvidia-mathdx` pip install.
+    """
     raw = os.environ.get("EXTRA_INCLUDE_DIRS", "")
-    return [d for d in raw.split(os.pathsep) if d]
+    dirs = [d for d in raw.split(os.pathsep) if d]
+
+    mathdx_include_dir = get_mathdx_include_dir()
+    if mathdx_include_dir and mathdx_include_dir not in dirs:
+        dirs.append(mathdx_include_dir)
+
+    return dirs
 
 
 def get_compile_args():
