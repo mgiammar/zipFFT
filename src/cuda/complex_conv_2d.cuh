@@ -84,6 +84,7 @@ __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
 
     // FFT_inv execution
     FFT_inv().execute(thread_data, shared_mem, workspace_inv);
+    __syncthreads();
 
     io_handler_inv.store_rmem_to_gmem(data, thread_data, {}, shared_mem);
 }

@@ -226,6 +226,15 @@ struct io_conv {
     // concurrently in use by anything else while this function runs (see complex_conv_2d.cuh's
     // fused Y-kernel, which reuses the FFT's own execution shared memory buffer for this, since
     // the timing never overlaps).
+    //
+    // `Stride` (=x_dim, the number of valid columns in the workspace array) is not guaranteed to
+    // be a multiple of FFT::ffts_per_block -- notably for the real-valued (R2C/C2R) path, x_dim
+    // is the Hermitian-reduced FFTSizeX/2+1, which is always odd for power-of-two FFTSizeX and
+    // therefore can never be evenly divided by an even FFT::ffts_per_block. The last grid block
+    // along the column dimension can end up with "phantom" threads/slots whose column is >=
+    // Stride; both the global-memory side (remap indexing) and the register side (natural
+    // indexing) explicitly bounds-check against Stride and skip/zero those, rather than silently
+    // reading/writing adjacent rows' memory.
     template <class FFT, typename GmemType, typename RmemType, class LoadOp = zipfft::identity,
               int BatchOffset, int BlockOffset, int Stride, bool IsPadded, int SignalLength>
     __device__ __forceinline__ void load_strided_tiled_swizzled(const GmemType* gmem,
@@ -252,13 +261,17 @@ struct io_conv {
         const unsigned int local_row = tid / tile;
         const unsigned int local_col = tid % tile;
 
-        const unsigned int base_index = blockIdx.x * BlockOffset + blockIdx.y * BatchOffset;
+        const unsigned int col_base = blockIdx.x * BlockOffset;
+        const unsigned int base_index = col_base + blockIdx.y * BatchOffset;
+        const bool remap_col_valid = (col_base + local_col) < static_cast<unsigned int>(Stride);
+        const bool natural_col_valid = (col_base + ty) < static_cast<unsigned int>(Stride);
 
 #pragma unroll
         for (unsigned int i = 0; i < FFT::input_ept; ++i) {
             // Coalesced global READ using the remapped thread->address (fills whole sectors).
+            // Skipped entirely for phantom (out-of-range) columns -- see note above.
             const unsigned int global_row_remap = i * FFT::stride + local_row;
-            if (global_row_remap < FFT::input_length) {
+            if (remap_col_valid && global_row_remap < FFT::input_length) {
                 const unsigned int gmem_index = base_index + global_row_remap * Stride + local_col;
                 if (global_row_remap < SignalLength) {
                     input_t v = op(reinterpret_cast<const input_t*>(gmem)[gmem_index]);
@@ -275,8 +288,12 @@ struct io_conv {
             const unsigned int local_fft_element = i * FFT::stride + tx;
             if (local_fft_element < FFT::input_length) {
                 input_t val;
-                reinterpret_cast<float*>(&val)[0] = smem_re[tx * padded_tile + ty];
-                reinterpret_cast<float*>(&val)[1] = smem_im[tx * padded_tile + ty];
+                if (natural_col_valid) {
+                    reinterpret_cast<float*>(&val)[0] = smem_re[tx * padded_tile + ty];
+                    reinterpret_cast<float*>(&val)[1] = smem_im[tx * padded_tile + ty];
+                } else {
+                    val = get_zero<input_t>();
+                }
                 reinterpret_cast<input_t*>(rmem)[i] = val;
             }
             __syncthreads();
@@ -309,13 +326,17 @@ struct io_conv {
         const unsigned int local_row = tid / tile;
         const unsigned int local_col = tid % tile;
 
-        const unsigned int base_index = blockIdx.x * BlockOffset + blockIdx.y * BatchOffset;
+        const unsigned int col_base = blockIdx.x * BlockOffset;
+        const unsigned int base_index = col_base + blockIdx.y * BatchOffset;
+        const bool remap_col_valid = (col_base + local_col) < static_cast<unsigned int>(Stride);
+        const bool natural_col_valid = (col_base + ty) < static_cast<unsigned int>(Stride);
 
 #pragma unroll
         for (unsigned int i = 0; i < FFT::output_ept; ++i) {
-            // Stage using the natural per-thread (row, col) ownership cuFFTDx produced.
+            // Stage using the natural per-thread (row, col) ownership cuFFTDx produced. Phantom
+            // (out-of-range) columns are skipped -- see note above load_strided_tiled_swizzled.
             const unsigned int local_fft_element = i * FFT::stride + tx;
-            if (local_fft_element < FFT::output_length) {
+            if (local_fft_element < FFT::output_length && natural_col_valid) {
                 output_t val = op(reinterpret_cast<const output_t*>(rmem)[i]);
                 smem_re[tx * padded_tile + ty] = reinterpret_cast<float*>(&val)[0];
                 smem_im[tx * padded_tile + ty] = reinterpret_cast<float*>(&val)[1];
@@ -324,7 +345,8 @@ struct io_conv {
 
             // Coalesced global WRITE using the remapped thread->address (fills whole sectors).
             const unsigned int global_row_remap = i * FFT::stride + local_row;
-            if (global_row_remap < FFT::output_length && global_row_remap < ValidLength) {
+            if (remap_col_valid && global_row_remap < FFT::output_length &&
+                global_row_remap < ValidLength) {
                 const unsigned int gmem_index = base_index + global_row_remap * Stride + local_col;
                 output_t out;
                 reinterpret_cast<float*>(&out)[0] = smem_re[local_row * padded_tile + local_col];
