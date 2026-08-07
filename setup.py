@@ -111,7 +111,7 @@ def get_mathdx_include_dir():
 
 def get_extra_include_dirs():
     """Collect additional include paths.
-    
+
     - explicit EXTRA_INCLUDE_DIRS (e.g. conda build.sh pointing at conda-forge's mathdx
       package)
     - an auto-detected `nvidia-mathdx` pip install.
@@ -172,9 +172,67 @@ def get_compile_args():
 def get_torch_library_path():
     """Get the path to PyTorch libraries."""
     import torch
-    torch_path = os.path.dirname(torch.__file__)
-    return os.path.join(torch_path, 'lib')
 
+    torch_path = os.path.dirname(torch.__file__)
+    return os.path.join(torch_path, "lib")
+
+
+# (yaml_key, C++ array name, generated header path)
+CONFIG_CODEGEN_TARGETS = [
+    (
+        "real_conv2d",
+        "SUPPORTED_CONV_CONFIGS",
+        "src/cuda/generated_real_conv_2d_configs.hpp",
+    ),
+    (
+        "complex_conv2d",
+        "SUPPORTED_C2C_CONV_CONFIGS",
+        "src/cuda/generated_complex_conv_2d_configs.hpp",
+    ),
+]
+
+
+def generate_config_headers(yaml_path="configs.yaml"):
+    """Render configs.yaml into the C++ config-array headers included by the real/complex
+    conv binding files. This lets new (signal, fft, batch) shapes be added by editing YAML
+    instead of hand-writing C++ template instantiations -- see configs.yaml for the schema.
+    """
+    import yaml
+
+    with open(yaml_path) as f:
+        configs = yaml.safe_load(f)
+
+    for yaml_key, array_name, out_path in CONFIG_CODEGEN_TARGETS:
+        entries = configs[yaml_key]
+        lines = [
+            "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
+            "// Add/remove shapes in configs.yaml and rebuild instead.",
+            "#pragma once",
+            "",
+            "#include <array>",
+            "#include <tuple>",
+            "",
+            "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)",
+            "static constexpr std::array<",
+            "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>,",
+            f"    {len(entries)}>",
+            f"    {array_name} = {{{{",
+        ]
+        for entry in entries:
+            cross_correlate = "true" if entry["cross_correlate"] else "false"
+            lines.append(
+                f"        {{{entry['signal_y']}, {entry['signal_x']}, {entry['fft_y']}, "
+                f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}}},"
+            )
+        lines.append("    }};")
+        lines.append("")
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "w") as f:
+            f.write("\n".join(lines))
+
+
+generate_config_headers()
 
 DEFAULT_COMPILE_ARGS = get_compile_args()
 
