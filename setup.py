@@ -212,17 +212,31 @@ def generate_config_headers(yaml_path="configs.yaml"):
             "#include <array>",
             "#include <tuple>",
             "",
-            "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)",
+            "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate,",
+            "//  use_tiled_swizzled_io, ffts_per_block_y)",
             "static constexpr std::array<",
-            "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>,",
+            "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool,",
+            "               bool, unsigned int>,",
             f"    {len(entries)}>",
             f"    {array_name} = {{{{",
         ]
         for entry in entries:
             cross_correlate = "true" if entry["cross_correlate"] else "false"
+            use_tiled_swizzled_io = entry.get("use_tiled_swizzled_io", False)
+            ffts_per_block_y = entry.get("ffts_per_block_y", 0)
+            if use_tiled_swizzled_io and not (
+                ffts_per_block_y >= 2 and ffts_per_block_y % 2 == 0
+            ):
+                raise ValueError(
+                    f"configs.yaml entry {entry} sets use_tiled_swizzled_io: true but "
+                    "ffts_per_block_y is not an even number >= 2 (required by the "
+                    "tiled+swizzled IO path's bank-conflict-free padding scheme. "
+                    "see real_conv_2d_io.hpp)."
+                )
             lines.append(
                 f"        {{{entry['signal_y']}, {entry['signal_x']}, {entry['fft_y']}, "
-                f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}}},"
+                f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}, "
+                f"{'true' if use_tiled_swizzled_io else 'false'}, {ffts_per_block_y}}},"
             )
         lines.append("    }};")
         lines.append("")
