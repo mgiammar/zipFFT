@@ -5,7 +5,7 @@ zipFFT compiles CUDA kernels at install time, so all installation paths require 
 Two installation paths are supported:
 
 - **[Path 1 — conda recipe](#path-1--conda-recipe)**: conda manages the build-time dependencies (CUDA toolkit, cuFFTDx headers, PyTorch) and then compiles on your machine. Recommended for most users.
-- **[Path 2 — pip from source](#path-2--pip-from-source)**: manual dependency setup followed by `pip install`. Most flexible if you need to customize parts of the build process (e.g. custom CUDA flags, non-conda Python environment, etc.) but requires more manual steps.
+- **[Path 2 — pip from source](#path-2--pip-from-source)**: install PyTorch + `nvidia-mathdx` from PyPI, then `pip install`. Most flexible if you need to customize parts of the build process (e.g. custom CUDA flags, non-conda Python environment, etc.).
 
 Both paths compile the CUDA kernels locally, so the resulting binary is always matched to your GPU architecture and installed toolchain.
 
@@ -98,28 +98,29 @@ nvcc --version
 
 If not, install the CUDA Toolkit from [NVIDIA's website](https://developer.nvidia.com/cuda-toolkit) or ask your system administrator.
 
-### 3. Install cuFFTDx / MathDx headers
+### 3. Install PyTorch and Python dependencies
 
-Download the MathDx tarball for your CUDA version from the [cuFFTDx download page](https://developer.nvidia.com/cufftdx-downloads) and copy the headers into your environment:
-
-```bash
-wget https://developer.nvidia.com/downloads/compute/cuFFTDx/redist/cuFFTDx/cuda13/nvidia-mathdx-25.06.1-cuda13.tar.gz
-tar -xzf nvidia-mathdx-25.06.1-cuda13.tar.gz
-mv nvidia-mathdx-25.06.1/nvidia/mathdx/25.06/include/* $CONDA_PREFIX/include/
-rm -rf nvidia-mathdx-25.06.1 nvidia-mathdx-*.tar.gz
-```
-
-### 4. Install PyTorch and Python dependencies
+cuFFTDx / MathDx headers are pulled in automatically via the `nvidia-mathdx` PyPI package
+(a pure header-only wheel, no manual download needed). `setup.py` locates it at build time
+through `nvidia.mathdx.__path__` and adds it to the include path.
 
 ```bash
-pip install torch torchvision pytest pyyaml
+pip install torch torchvision pytest pyyaml nvidia-mathdx
 ```
 
-### 5. Install zipFFT
+### 4. Install zipFFT
+
+`setup.py` imports `torch` directly to configure the CUDA extension, so build with
+`--no-build-isolation` to make sure it sees the PyTorch (and `nvidia-mathdx`) you just
+installed into this environment rather than a fresh copy in an isolated build env:
 
 ```bash
-pip install -e .
+pip install -e . --no-build-isolation
 ```
+
+If you omit `--no-build-isolation`, pip will still auto-install `nvidia-mathdx` (declared in
+`pyproject.toml`'s `[build-system] requires`) into its isolated build environment, but that
+environment's PyTorch may not match the CUDA build you have installed.
 
 To reduce compile time by targeting only your GPU's compute capability and skipping unused modules.
 
