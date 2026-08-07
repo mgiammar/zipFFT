@@ -36,7 +36,6 @@ if zipfft.padded_rconv2d is not None:
     ]
 
 NUM_TEST_REPEATS = 10
-RTOL = 3e1  # NOTE: Effectively no rtol since numerical differences affect small values
 ATOL = 5e-6
 
 
@@ -48,7 +47,6 @@ def run_conv_or_corr_2d_test(
     batch_size: int,
     cross_correlate: bool,
     dtype: torch.dtype = torch.float32,
-    rtol: float = RTOL,
     atol: float = ATOL,
     device: str | torch.device = "cuda:0",
 ):
@@ -70,10 +68,8 @@ def run_conv_or_corr_2d_test(
         Whether to perform cross-correlation (True) or convolution (False).
     dtype : torch.dtype
         The data type of the input tensor.
-    rtol : float
-        Relative tolerance for comparison.
     atol : float
-        Absolute tolerance for comparison.
+        Threshold for the L2 relative-norm comparison.
     """
     filter_shape = (signal_length_y, signal_length_x)
     image_shape = (fft_size_y, fft_size_x)
@@ -153,25 +149,23 @@ def run_conv_or_corr_2d_test(
     torch.cuda.synchronize()
 
     # Verify results
+    #
+    # NOTE: Real-valued conv/corr outputs are signed and any element that happens to
+    #       land near a zero-crossing makes the ground_truth denominator arbitrarily
+    #       small therefore blowing up "relative error" for a tiny, expected amount of
+    #       float32 FFT rounding noise (~1e-5 absolute). Instead of of using allclose,
+    #       compare the L2 relative norm to a small threshold for a more robust test.
     max_abs_diff = torch.max(torch.abs(torch_result - output))
-    max_rel_diff = torch.max(
-        torch.abs(torch_result - output) / (torch.abs(output) + 1e-8)
-    )
+    l2_norm = torch.norm(torch_result - output) / torch.norm(torch_result)
 
     op_name = "cross-correlation" if cross_correlate else "convolution"
     error_msg = (
         f"Real 2D {op_name} results do not match ground truth. "
-        f"Max abs diff: {max_abs_diff}, Max rel diff: {max_rel_diff}. "
+        f"Max abs diff: {max_abs_diff}, L2 relative norm: {l2_norm}. "
         f"Min/Max ground truth: {torch.min(torch_result.abs())}, {torch.max(torch_result.abs())}."
     )
 
-    # For small sizes (fft_size <= 512) use allclose check, but for larger transforms,
-    # check the L2 norm instead to avoid failures due to implementation differences
-    if max(fft_size_y, fft_size_x) < 512:
-        assert torch.allclose(torch_result, output, rtol=rtol, atol=atol), error_msg
-    else:
-        l2_norm = torch.norm(torch_result - output) / torch.norm(torch_result)
-        assert l2_norm < atol, error_msg + f" L2 norm: {l2_norm}"
+    assert l2_norm < atol, error_msg
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,7 @@
 #include <tuple>
 #include <vector>
 
+#include "generated_real_conv_2d_configs.hpp"
 #include "real_conv_2d.cuh"
 
 // Convolution configuration structure for padded 2D real convolution
@@ -46,74 +47,22 @@ struct PaddedRealConvConfig2D {
     }
 };
 
-// Define supported convolution configurations
-// Format: (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)
-static constexpr std::array<
-    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 45>
-    SUPPORTED_CONV_CONFIGS = {{
-        // Convolution configurations (TEST CONFIGURATIONS)
-        {48, 48, 64, 64, 1, false},      // (48, 48) -> (64, 64), batch=1
-        {48, 48, 64, 64, 8, false},      // (48, 48) -> (64, 64), batch=8
-        {96, 96, 128, 128, 1, false},    // (96, 96) -> (128, 128), batch=1
-        {96, 96, 128, 128, 8, false},    // (96, 96) -> (128, 128), batch=8
-        {192, 192, 256, 256, 1, false},  // (192, 192) -> (256, 256), batch=1
-        {192, 192, 256, 256, 4, false},  // (192, 192) -> (256, 256), batch=4
-        {384, 384, 512, 512, 1, false},  // (384, 384) -> (512, 512), batch=1
-        {384, 384, 512, 512, 4, false},  // (384, 384) -> (512, 512), batch=4
-        {384, 192, 512, 256, 1, false},  // (384, 192) -> (512, 256), batch=1
-        {384, 192, 512, 256, 4, false},  // (384, 192) -> (512, 256), batch=4
-        {192, 384, 256, 512, 1, false},  // (192, 384) -> (256, 512), batch=1
-        {192, 384, 256, 512, 4, false},  // (192, 384) -> (256, 512), batch=4
-
-        // Cross-correlation configurations (TEST CONFIGURATIONS)
-        {48, 48, 64, 64, 1, true},      // (48, 48) -> (64, 64), batch=1
-        {48, 48, 64, 64, 8, true},      // (48, 48) -> (64, 64), batch=8
-        {96, 96, 128, 128, 1, true},    // (96, 96) -> (128, 128), batch=1
-        {96, 96, 128, 128, 8, true},    // (96, 96) -> (128, 128), batch=8
-        {192, 192, 256, 256, 1, true},  // (192, 192) -> (256, 256), batch=1
-        {192, 192, 256, 256, 4, true},  // (192, 192) -> (256, 256), batch=4
-        {384, 384, 512, 512, 1, true},  // (384, 384) -> (512, 512), batch=1
-        {384, 384, 512, 512, 4, true},  // (384, 384) -> (512, 512), batch=4
-        {384, 192, 512, 256, 1, true},  // (384, 192) -> (512, 256), batch=1
-        {384, 192, 512, 256, 4, true},  // (384, 192) -> (512, 256), batch=4
-        {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
-        {192, 384, 256, 512, 4, true},  // (192, 384) -> (256, 512), batch=4
-
-        // Cross-correlation configurations (TEST CONFIGURATIONS)
-        {16, 16, 64, 64, 1, true},      // (16, 16) -> (64, 64), batch=1
-        {16, 16, 64, 64, 8, true},      // (16, 16) -> (64, 64), batch=8
-        {32, 32, 128, 128, 1, true},    // (32, 32) -> (128, 128), batch=1
-        {32, 32, 128, 128, 8, true},    // (32, 32) -> (128, 128), batch=8
-        {64, 64, 256, 256, 1, true},    // (64, 64) -> (256, 256), batch=1
-        {64, 64, 256, 256, 4, true},    // (64, 64) -> (256, 256), batch=4
-        {128, 128, 512, 512, 1, true},  // (128, 128) -> (512, 512), batch=1
-        {128, 128, 512, 512, 4, true},  // (128, 128) -> (512, 512), batch=4
-        {128, 64, 512, 256, 1, true},   // (128, 64) -> (512, 256), batch=1
-        {128, 64, 512, 256, 4, true},   // (128, 64) -> (512, 256), batch=4
-        {64, 128, 256, 512, 1, true},   // (64, 128) -> (256, 512), batch=1
-        {64, 128, 256, 512, 4, true},   // (64, 128) -> (256, 512), batch=4
-
-        // Cross-correlation for Falcon 4i images (4096x4096)
-        {512, 512, 4096, 4096, 1, true},   // (512, 512) -> (4096, 4096), batch=1
-        {512, 512, 4096, 4096, 4, true},   // (512, 512) -> (4096, 4096), batch=4
-        {512, 512, 4096, 4096, 8, true},   // (512, 512) -> (4096, 4096), batch=8
-        {512, 512, 4096, 4096, 12, true},  // (512, 512) -> (4096, 4096), batch=12
-        {512, 512, 4096, 4096, 16, true},  // (512, 512) -> (4096, 4096), batch=16
-        {512, 512, 4096, 4096, 20, true},  // (512, 512) -> (4096, 4096), batch=20
-        {512, 512, 4096, 4096, 24, true},  // (512, 512) -> (4096, 4096), batch=24
-        {512, 512, 4096, 4096, 28, true},  // (512, 512) -> (4096, 4096), batch=28
-        {512, 512, 4096, 4096, 32, true},  // (512, 512) -> (4096, 4096), batch=32
-    }};
+// SUPPORTED_CONV_CONFIGS is generated from configs.yaml at build time; see
+// generated_real_conv_2d_configs.hpp (included above).
 
 // Template dispatch functions for each supported configuration
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
-          unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate>
+          unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate,
+          bool UseTiledSwizzledIO, unsigned int FFTsPerBlockY>
 void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, const float2* conv_data,
                                float* output_data, int device_index, cudaStream_t stream) {
-    // NOTE: Removing the elements_per_thread and ffts_per_block template parameters to use defaults
+    // NOTE: elements_per_thread and ffts_per_block_x are left at their cuFFTDx-recommended
+    // defaults (0); only ffts_per_block_y is ever overridden, and only because
+    // UseTiledSwizzledIO requires it (see real_conv_2d_io.hpp).
     padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                              BatchSize, CrossCorrelate>(input_data, fft_workspace, conv_data,
-                                                         output_data, device_index, stream);
+                              BatchSize, CrossCorrelate, 0, 0, 0, FFTsPerBlockY,
+                              UseTiledSwizzledIO>(input_data, fft_workspace, conv_data,
+                                                  output_data, device_index, stream);
 }
 
 // Helper template to create dispatch table entries at compile time
@@ -131,7 +80,8 @@ constexpr auto make_padded_conv_dispatch_table(std::index_sequence<Is...>) {
               constexpr auto config = SUPPORTED_CONV_CONFIGS[Is];
               return dispatch_padded_real_conv<std::get<1>(config), std::get<0>(config),
                                                std::get<3>(config), std::get<2>(config),
-                                               std::get<4>(config), std::get<5>(config)>;
+                                               std::get<4>(config), std::get<5>(config),
+                                               std::get<6>(config), std::get<7>(config)>;
           }()}...}};
 }
 
@@ -157,13 +107,15 @@ get_padded_conv_function(unsigned int signal_length_y, unsigned int signal_lengt
 }
 
 // Function to expose supported configurations to Python
-std::vector<std::tuple<int, int, int, int, int, bool>> get_supported_padded_conv_configs() {
-    std::vector<std::tuple<int, int, int, int, int, bool>> configs;
+std::vector<std::tuple<int, int, int, int, int, bool, bool, int>>
+get_supported_padded_conv_configs() {
+    std::vector<std::tuple<int, int, int, int, int, bool, bool, int>> configs;
     configs.reserve(SUPPORTED_CONV_CONFIGS.size());
 
     for (const auto& config : SUPPORTED_CONV_CONFIGS) {
         configs.emplace_back(std::get<0>(config), std::get<1>(config), std::get<2>(config),
-                             std::get<3>(config), std::get<4>(config), std::get<5>(config));
+                             std::get<3>(config), std::get<4>(config), std::get<5>(config),
+                             std::get<6>(config), std::get<7>(config));
     }
 
     return configs;
@@ -303,6 +255,6 @@ PYBIND11_MODULE(padded_rconv2d, m) {  // Name should match in setup.py
     m.def("conv", &padded_real_conv_2d, "2D padded real convolution");
     m.def("corr", &padded_real_corr_2d, "2D padded real cross-correlation");
     m.def("get_supported_conv_configs", &get_supported_padded_conv_configs,
-          "Get list of supported (signal_y, signal_x, fft_y, fft_x, batch_size, cross_correlate) "
-          "configurations");
+          "Get list of supported (signal_y, signal_x, fft_y, fft_x, batch_size, cross_correlate, "
+          "use_tiled_swizzled_io, ffts_per_block_y) configurations");
 }

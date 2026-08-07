@@ -1,0 +1,97 @@
+# Supported kernel shapes/batch-sizes for zipFFT's precompiled CUDA extensions.
+#
+# This file is the single source of truth for which (signal, fft, batch, cross_correlate)
+# configurations get compiled into the `padded_rconv2d` and `padded_cconv2d` extensions.
+# `setup.py` reads it at build time and generates the corresponding C++ config arrays
+# (src/cuda/generated_real_conv_2d_configs.hpp, src/cuda/generated_complex_conv_2d_configs.hpp).
+#
+# To add a new shape: add an entry below and rebuild
+#
+# Fields:
+#   signal_y, signal_x  - input signal (template) dimensions
+#   fft_y, fft_x        - padded FFT dimensions (power-of-two, must be a supported cuFFTDx size)
+#   batch               - batch size
+#   cross_correlate     - true compiles the `.corr()` variant for this shape, false the `.conv()`
+#                         variant. A shape needs one entry of each to support both.
+
+real_conv2d:
+  # Convolution configurations (TEST CONFIGURATIONS)
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: false}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
+  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: false}
+  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: false}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: false}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: false}
+  # Cross-correlation configurations (TEST CONFIGURATIONS)
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true}
+  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
+  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
+  - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+  - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true}
+  - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
+  - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
+  - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
+  - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
+  # Cross-correlation for Falcon 4i images (4096x4096)
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 1, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 4, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 8, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 12, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 16, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 20, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 24, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 28, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 32, cross_correlate: true}
+
+complex_conv2d:
+  # Convolution configurations (TEST CONFIGURATIONS)
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: false}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false}
+  # Cross-correlation configurations (TEST CONFIGURATIONS)
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: true}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true}
+  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
+  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+  # Cross-correlation for Falcon 4i images (4096x4096)
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 1, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 4, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 8, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 12, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 16, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 20, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 24, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 28, cross_correlate: true}
+  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 32, cross_correlate: true}

@@ -95,10 +95,35 @@ if DEBUG_PRINT:
 # fmt: on
 
 
+def get_mathdx_include_dir():
+    """Locate cuFFTDx/MathDx headers bundled in `nvidia-mathdx` pkg, if installed."""
+    try:
+        import nvidia.mathdx
+    except ImportError:
+        return None
+
+    for search_path in nvidia.mathdx.__path__:
+        include_dir = os.path.join(search_path, "include")
+        if os.path.isdir(include_dir):
+            return include_dir
+    return None
+
+
 def get_extra_include_dirs():
-    """Allow callers (e.g. conda build.sh) to inject additional include paths."""
+    """Collect additional include paths.
+
+    - explicit EXTRA_INCLUDE_DIRS (e.g. conda build.sh pointing at conda-forge's mathdx
+      package)
+    - an auto-detected `nvidia-mathdx` pip install.
+    """
     raw = os.environ.get("EXTRA_INCLUDE_DIRS", "")
-    return [d for d in raw.split(os.pathsep) if d]
+    dirs = [d for d in raw.split(os.pathsep) if d]
+
+    mathdx_include_dir = get_mathdx_include_dir()
+    if mathdx_include_dir and mathdx_include_dir not in dirs:
+        dirs.append(mathdx_include_dir)
+
+    return dirs
 
 
 def get_compile_args():
@@ -147,9 +172,81 @@ def get_compile_args():
 def get_torch_library_path():
     """Get the path to PyTorch libraries."""
     import torch
-    torch_path = os.path.dirname(torch.__file__)
-    return os.path.join(torch_path, 'lib')
 
+    torch_path = os.path.dirname(torch.__file__)
+    return os.path.join(torch_path, "lib")
+
+
+# (yaml_key, C++ array name, generated header path)
+CONFIG_CODEGEN_TARGETS = [
+    (
+        "real_conv2d",
+        "SUPPORTED_CONV_CONFIGS",
+        "src/cuda/generated_real_conv_2d_configs.hpp",
+    ),
+    (
+        "complex_conv2d",
+        "SUPPORTED_C2C_CONV_CONFIGS",
+        "src/cuda/generated_complex_conv_2d_configs.hpp",
+    ),
+]
+
+
+def generate_config_headers(yaml_path="configs.yaml"):
+    """Render configs.yaml into the C++ config-array headers included by the real/complex
+    conv binding files. This lets new (signal, fft, batch) shapes be added by editing YAML
+    instead of hand-writing C++ template instantiations -- see configs.yaml for the schema.
+    """
+    import yaml
+
+    with open(yaml_path) as f:
+        configs = yaml.safe_load(f)
+
+    for yaml_key, array_name, out_path in CONFIG_CODEGEN_TARGETS:
+        entries = configs[yaml_key]
+        lines = [
+            "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
+            "// Add/remove shapes in configs.yaml and rebuild instead.",
+            "#pragma once",
+            "",
+            "#include <array>",
+            "#include <tuple>",
+            "",
+            "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate,",
+            "//  use_tiled_swizzled_io, ffts_per_block_y)",
+            "static constexpr std::array<",
+            "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool,",
+            "               bool, unsigned int>,",
+            f"    {len(entries)}>",
+            f"    {array_name} = {{{{",
+        ]
+        for entry in entries:
+            cross_correlate = "true" if entry["cross_correlate"] else "false"
+            use_tiled_swizzled_io = entry.get("use_tiled_swizzled_io", False)
+            ffts_per_block_y = entry.get("ffts_per_block_y", 0)
+            if use_tiled_swizzled_io and not (
+                ffts_per_block_y >= 2 and ffts_per_block_y % 2 == 0
+            ):
+                raise ValueError(
+                    f"configs.yaml entry {entry} sets use_tiled_swizzled_io: true but "
+                    "ffts_per_block_y is not an even number >= 2 (required by the "
+                    "tiled+swizzled IO path's bank-conflict-free padding scheme. "
+                    "see real_conv_2d_io.hpp)."
+                )
+            lines.append(
+                f"        {{{entry['signal_y']}, {entry['signal_x']}, {entry['fft_y']}, "
+                f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}, "
+                f"{'true' if use_tiled_swizzled_io else 'false'}, {ffts_per_block_y}}},"
+            )
+        lines.append("    }};")
+        lines.append("")
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "w") as f:
+            f.write("\n".join(lines))
+
+
+generate_config_headers()
 
 DEFAULT_COMPILE_ARGS = get_compile_args()
 

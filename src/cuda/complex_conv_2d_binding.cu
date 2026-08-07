@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "complex_conv_2d.cuh"
+#include "generated_complex_conv_2d_configs.hpp"
 
 // Convolution configuration structure for padded 2D complex-to-complex convolution
 struct PaddedComplexConvConfig2D {
@@ -45,44 +46,23 @@ struct PaddedComplexConvConfig2D {
     }
 };
 
-// Define supported convolution configurations
-// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate)
-static constexpr std::array<
-    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool>, 18>
-    SUPPORTED_C2C_CONV_CONFIGS = {{
-        // Convolution configurations (TEST CONFIGURATIONS)
-        {48, 48, 64, 64, 1, false},      // (48, 48) -> (64, 64), batch=1
-        {48, 48, 64, 64, 8, false},      // (48, 48) -> (64, 64), batch=8
-        {96, 96, 128, 128, 1, false},    // (96, 96) -> (128, 128), batch=1
-        {96, 96, 128, 128, 4, false},    // (96, 96) -> (128, 128), batch=4
-        {192, 192, 256, 256, 1, false},  // (192, 192) -> (256, 256), batch=1
-        {192, 192, 256, 256, 4, false},  // (192, 192) -> (256, 256), batch=4
-        {384, 192, 512, 256, 1, false},  // (384, 192) -> (512, 256), batch=1
-        {192, 384, 256, 512, 1, false},  // (192, 384) -> (256, 512), batch=1
-
-        // Cross-correlation configurations (TEST CONFIGURATIONS)
-        {48, 48, 64, 64, 1, true},      // (48, 48) -> (64, 64), batch=1
-        {48, 48, 64, 64, 8, true},      // (48, 48) -> (64, 64), batch=8
-        {96, 96, 128, 128, 1, true},    // (96, 96) -> (128, 128), batch=1
-        {96, 96, 128, 128, 4, true},    // (96, 96) -> (128, 128), batch=4
-        {192, 192, 256, 256, 1, true},  // (192, 192) -> (256, 256), batch=1
-        {192, 192, 256, 256, 4, true},  // (192, 192) -> (256, 256), batch=4
-        {384, 192, 512, 256, 1, true},  // (384, 192) -> (512, 256), batch=1
-        {192, 384, 256, 512, 1, true},  // (192, 384) -> (256, 512), batch=1
-        {16, 16, 64, 64, 1, true},      // (16, 16) -> (64, 64), batch=1
-        {32, 32, 128, 128, 1, true},    // (32, 32) -> (128, 128), batch=1
-    }};
+// SUPPORTED_C2C_CONV_CONFIGS is generated from configs.yaml at build time; see
+// generated_complex_conv_2d_configs.hpp (included above).
 
 // Template dispatch functions for each supported configuration
 template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
-          unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate>
+          unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate,
+          bool UseTiledSwizzledIO, unsigned int FFTsPerBlockY>
 void dispatch_padded_complex_conv(float2* input_data, float2* fft_workspace,
                                   const float2* conv_data, float2* output_data, int device_index,
                                   cudaStream_t stream) {
-    // NOTE: Removing the elements_per_thread and ffts_per_block template parameters to use defaults
+    // NOTE: elements_per_thread and ffts_per_block_x are left at their cuFFTDx-recommended
+    // defaults (0); only ffts_per_block_y is ever overridden, and only because
+    // UseTiledSwizzledIO requires it (see real_conv_2d_io.hpp).
     padded_block_complex_conv_2d<float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                                 BatchSize, CrossCorrelate>(input_data, fft_workspace, conv_data,
-                                                            output_data, device_index, stream);
+                                 BatchSize, CrossCorrelate, 0, 0, 0, FFTsPerBlockY,
+                                 UseTiledSwizzledIO>(input_data, fft_workspace, conv_data,
+                                                     output_data, device_index, stream);
 }
 
 // Helper template to create dispatch table entries at compile time
@@ -102,7 +82,8 @@ constexpr auto make_padded_complex_conv_dispatch_table(std::index_sequence<Is...
               constexpr auto config = SUPPORTED_C2C_CONV_CONFIGS[Is];
               return dispatch_padded_complex_conv<std::get<1>(config), std::get<0>(config),
                                                   std::get<3>(config), std::get<2>(config),
-                                                  std::get<4>(config), std::get<5>(config)>;
+                                                  std::get<4>(config), std::get<5>(config),
+                                                  std::get<6>(config), std::get<7>(config)>;
           }()}...}};
 }
 
@@ -128,13 +109,15 @@ get_padded_complex_conv_function(unsigned int signal_length_y, unsigned int sign
 }
 
 // Function to expose supported configurations to Python
-std::vector<std::tuple<int, int, int, int, int, bool>> get_supported_padded_complex_conv_configs() {
-    std::vector<std::tuple<int, int, int, int, int, bool>> configs;
+std::vector<std::tuple<int, int, int, int, int, bool, bool, int>>
+get_supported_padded_complex_conv_configs() {
+    std::vector<std::tuple<int, int, int, int, int, bool, bool, int>> configs;
     configs.reserve(SUPPORTED_C2C_CONV_CONFIGS.size());
 
     for (const auto& config : SUPPORTED_C2C_CONV_CONFIGS) {
         configs.emplace_back(std::get<0>(config), std::get<1>(config), std::get<2>(config),
-                             std::get<3>(config), std::get<4>(config), std::get<5>(config));
+                             std::get<3>(config), std::get<4>(config), std::get<5>(config),
+                             std::get<6>(config), std::get<7>(config));
     }
 
     return configs;
@@ -282,6 +265,6 @@ PYBIND11_MODULE(padded_cconv2d, m) {  // Name should match in setup.py
     m.def("conv", &padded_complex_conv_2d, "2D padded complex-to-complex convolution");
     m.def("corr", &padded_complex_corr_2d, "2D padded complex-to-complex cross-correlation");
     m.def("get_supported_conv_configs", &get_supported_padded_complex_conv_configs,
-          "Get list of supported (signal_y, signal_x, fft_y, fft_x, batch_size, cross_correlate) "
-          "configurations");
+          "Get list of supported (signal_y, signal_x, fft_y, fft_x, batch_size, cross_correlate, "
+          "use_tiled_swizzled_io, ffts_per_block_y) configurations");
 }
