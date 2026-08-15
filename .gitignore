@@ -65,3 +65,8 @@ htmlcov/
 
 # User-specific files
 .clang-format
+
+# Generated demo/benchmark output artifacts
+benchmark/demo_complex_corr_outputs/
+benchmark/results/
+benchmark/build/

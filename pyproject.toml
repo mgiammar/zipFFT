@@ -22,10 +22,10 @@ classifiers = [
 ]
 
 # Python package dependencies
-dependencies = ["numpy", "torch"]
+dependencies = ["numpy", "torch>=2.7.0", "nvidia-mathdx>=25.06", "pyyaml"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pyyaml"]
+dev = ["pytest"]
 
 # The package python module in the source directory
 [tool.setuptools.packages.find]
