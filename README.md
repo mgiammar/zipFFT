@@ -2,6 +2,8 @@
 
 Efficient **z**ero **i**mplicitly **p**added (zip) FFT kernels written in CUDA/cuFFTDx with a PyTorch interface.
 
+_Note_: Development of zipFFT was initially motivated by similar work by Ben Himes's in [FastFFT](https://github.com/StochasticAnalytics/FastFFT) for accelerating template matching in _cis_TEM.
+
 What the zipFFT library is:
 
 * A set of problem-specific CUDA kernels, leveraging cuFFTDx, for image convolution/cross-correlation.
