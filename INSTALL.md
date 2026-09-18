@@ -39,7 +39,8 @@ To speed up compilation and reduce binary size, set the `CUDA_ARCHITECTURES` env
 
 ```bash
 export CUDA_ARCHITECTURES=8.9  # for Ada Lovelace GPUs (e.g. RTX A6000 ada)
-# export CUDA_ARCHITECTURES=12.0  # for Blackwell GPUs (e.g. RTX 6000 blackwell)
+# export CUDA_ARCHITECTURES=12.0  # for consumer/workstation Blackwell GPUs (e.g. RTX 6000 blackwell)
+# export CUDA_ARCHITECTURES=10.0  # for datacenter Blackwell GPUs (e.g. B200, GB200)
 ```
 
 ---
@@ -124,7 +125,7 @@ environment's PyTorch may not match the CUDA build you have installed.
 
 To reduce compile time by targeting only your GPU's compute capability and skipping unused modules.
 
-> Replace `8.9` with your GPU's SM version (e.g. `8.0` for A100, `9.0` for H100, `12.0` for Blackwell). If `CUDA_ARCHITECTURES` is not set, all supported architectures are compiled by default. Helpful list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
+> Replace `8.9` with your GPU's SM version (e.g. `8.0` for A100, `9.0` for H100, `10.0` for B200, `12.0` for RTX Blackwell). If `CUDA_ARCHITECTURES` is not set, all supported architectures are compiled by default. Helpful list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
 
 ```bash
 CUDA_ARCHITECTURES=8.9 ENABLED_EXTENSIONS=padded_rconv2d pip install -e .

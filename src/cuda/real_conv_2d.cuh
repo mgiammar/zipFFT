@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cufftdx.hpp>
 
 #include "../include/zipfft_common.hpp"
@@ -8,25 +10,36 @@
 template <class FFT, class IO_Handler, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void padded_block_fft_r2c_1d_kernel_with_layout(ScalarType* input_data,
-                                                    ComplexType* output_data,
-                                                    typename FFT::workspace_type workspace) {
-    using complex_type = ComplexType;
-    using scalar_type = ScalarType;
+    void padded_block_real_conv_r2c_1d_kernel_with_layout(ScalarType* input_data,
+                                                          ComplexType* output_data,
+                                                          typename FFT::workspace_type workspace) {
+#if defined(__CUDA_ARCH__)
+    // See zipfft::cuda_arch_pass_matches: this kernel is instantiated once per enabled -gencode
+    // target, but only one of those passes' SASS is ever launched at runtime. Gating the whole
+    // body (not just an early `return`) behind `if constexpr` discards cuFFTDx's FFT::execute
+    // instantiation -- the expensive part -- from compilation entirely on the other passes,
+    // rather than leaving it to be compiled and then optimized away as dead code.
+    if constexpr (zipfft::cuda_arch_pass_matches(cufftdx::sm_of_v<FFT>, __CUDA_ARCH__)) {
+#endif
+        using complex_type = ComplexType;
+        using scalar_type = ScalarType;
 
-    IO_Handler io_handler;
+        IO_Handler io_handler;
 
-    // Local array for thread
-    complex_type thread_data[FFT::storage_size];
+        // Local array for thread
+        complex_type thread_data[FFT::storage_size];
 
-    io_handler.load_gmem_to_rmem(input_data, thread_data);
+        io_handler.load_gmem_to_rmem(input_data, thread_data);
 
-    // Execute FFT
-    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
-    FFT().execute(thread_data, shared_mem, workspace);
+        // Execute FFT
+        extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+        FFT().execute(thread_data, shared_mem, workspace);
 
-    // Store using output layout (full FFT output)
-    io_handler.store_rmem_to_gmem(output_data, thread_data);
+        // Store using output layout (full FFT output)
+        io_handler.store_rmem_to_gmem(output_data, thread_data);
+#if defined(__CUDA_ARCH__)
+    }
+#endif
 }
 
 // --- Inverse c2r Kernel Definition with Index Mappers ---
@@ -34,93 +47,111 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 template <class FFT, class IO_Handler, typename ComplexType = typename FFT::value_type,
           typename ScalarType = typename ComplexType::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void padded_block_fft_c2r_2d_kernel_with_layout(ComplexType* input_data,
-                                                    ScalarType* output_data,
-                                                    typename FFT::workspace_type workspace) {
-    using complex_type = ComplexType;
-    using scalar_type = ScalarType;
+    void padded_block_real_conv_c2r_2d_kernel_with_layout(ComplexType* input_data,
+                                                          ScalarType* output_data,
+                                                          typename FFT::workspace_type workspace) {
+#if defined(__CUDA_ARCH__)
+    // See zipfft::cuda_arch_pass_matches / the comment in
+    // padded_block_real_conv_r2c_1d_kernel_with_layout above.
+    if constexpr (zipfft::cuda_arch_pass_matches(cufftdx::sm_of_v<FFT>, __CUDA_ARCH__)) {
+#endif
+        using complex_type = ComplexType;
+        using scalar_type = ScalarType;
 
-    IO_Handler io_handler;
+        IO_Handler io_handler;
 
-    // Local array for thread
-    complex_type thread_data[FFT::storage_size];
+        // Local array for thread
+        complex_type thread_data[FFT::storage_size];
 
-    io_handler.load_gmem_to_rmem(input_data, thread_data);
+        io_handler.load_gmem_to_rmem(input_data, thread_data);
 
-    // Execute FFT
-    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
-    FFT().execute(thread_data, shared_mem, workspace);
+        // Execute FFT
+        extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+        FFT().execute(thread_data, shared_mem, workspace);
 
-    // Store using padded output layout (truncates to SignalLength)
-    io_handler.store_rmem_to_gmem(output_data, thread_data);
+        // Store using padded output layout (truncates to SignalLength)
+        io_handler.store_rmem_to_gmem(output_data, thread_data);
+#if defined(__CUDA_ARCH__)
+    }
+#endif
 }
 
 // --- Strided C2C convolution (or cross-correlation) Kernel with Padding ---
 template <class FFT_fwd, class FFT_inv, class IO_Handler_fwd, class IO_Handler_inv,
           bool CrossCorrelate = false>
 __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
-    void strided_padded_block_conv_c2c_2d_kernel_with_layout(
+    void strided_padded_block_real_conv_c2c_2d_kernel_with_layout(
         typename FFT_fwd::value_type* data, const typename FFT_fwd::value_type* conv_data,
         typename FFT_fwd::workspace_type workspace_fwd,
         typename FFT_inv::workspace_type workspace_inv) {
-    using complex_type = typename FFT_fwd::value_type;
-    auto fft_length_y = cufftdx::size_of<FFT_fwd>::value;
+    static_assert(cufftdx::sm_of_v<FFT_fwd> == cufftdx::sm_of_v<FFT_inv>,
+                  "FFT_fwd and FFT_inv must be instantiated for the same SM<Arch>");
+#if defined(__CUDA_ARCH__)
+    // See zipfft::cuda_arch_pass_matches / the comment in
+    // padded_block_real_conv_r2c_1d_kernel_with_layout above.
+    if constexpr (zipfft::cuda_arch_pass_matches(cufftdx::sm_of_v<FFT_fwd>, __CUDA_ARCH__)) {
+#endif
+        using complex_type = typename FFT_fwd::value_type;
+        auto fft_length_y = cufftdx::size_of<FFT_fwd>::value;
 
-    IO_Handler_fwd io_handler_fwd;
-    IO_Handler_inv io_handler_inv;
+        IO_Handler_fwd io_handler_fwd;
+        IO_Handler_inv io_handler_inv;
 
-    // Where the row to read convolution data for this thread is located in global memory
-    const unsigned int global_read_offset =
-        threadIdx.x + (threadIdx.y * fft_length_y) +
-        (blockIdx.x * FFT_fwd::ffts_per_block * fft_length_y) +
-        (blockIdx.y * 0);  // Only one image being convolved across batches
-    // (blockIdx.y * (fft_length_y + IO_Handler_fwd::x_dim));
+        // Where the row to read convolution data for this thread is located in global memory
+        const unsigned int global_read_offset =
+            threadIdx.x + (threadIdx.y * fft_length_y) +
+            (blockIdx.x * FFT_fwd::ffts_per_block * fft_length_y) +
+            (blockIdx.y * 0);  // Only one image being convolved across batches
+        // (blockIdx.y * (fft_length_y + IO_Handler_fwd::x_dim));
 
-    // Declared up front (rather than just before FFT_fwd::execute) since IO_Handler_fwd's
-    // tiled+swizzled load path (when enabled) reuses this same buffer as scratch space before
-    // the FFT ever touches it. Safe to share: the load's own __syncthreads() calls guarantee
-    // every thread is done reading from shared memory before FFT_fwd::execute() starts writing
-    // to it, and FFT_fwd/FFT_inv already reuse this same buffer sequentially further down.
-    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+        // Declared up front (rather than just before FFT_fwd::execute) since IO_Handler_fwd's
+        // tiled+swizzled load path (when enabled) reuses this same buffer as scratch space before
+        // the FFT ever touches it. Safe to share: the load's own __syncthreads() calls guarantee
+        // every thread is done reading from shared memory before FFT_fwd::execute() starts writing
+        // to it, and FFT_fwd/FFT_inv already reuse this same buffer sequentially further down.
+        extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
 
-    // Local array for FFT thread execution
-    complex_type thread_data[FFT_fwd::storage_size];
-    io_handler_fwd.load_gmem_to_rmem(data, thread_data, {}, shared_mem);
+        // Local array for FFT thread execution
+        complex_type thread_data[FFT_fwd::storage_size];
+        io_handler_fwd.load_gmem_to_rmem(data, thread_data, {}, shared_mem);
 
-    FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
+        FFT_fwd().execute(thread_data, shared_mem, workspace_fwd);
 
-    // Point-wise multiply in the frequency domain using FMA for higher precision
+        // Point-wise multiply in the frequency domain using FMA for higher precision
 #pragma unroll
-    for (unsigned int i = 0; i < FFT_fwd::storage_size; ++i) {
-        const unsigned int conv_index = global_read_offset + i * FFT_fwd::stride;
+        for (unsigned int i = 0; i < FFT_fwd::storage_size; ++i) {
+            const unsigned int conv_index = global_read_offset + i * FFT_fwd::stride;
 
-        const float2 a = reinterpret_cast<float2*>(thread_data)[i];
-        const float2 b = __ldg(&reinterpret_cast<const float2*>(conv_data)[conv_index]);
-        float2 c;
+            const float2 a = reinterpret_cast<float2*>(thread_data)[i];
+            const float2 b = __ldg(&reinterpret_cast<const float2*>(conv_data)[conv_index]);
+            float2 c;
 
-        // computing c = a * b       (convolution)
-        // or        c = conj(a) * b (cross-correlation)
-        if (CrossCorrelate) {
-            // c = conj(a) * b
-            // c.x = a.x * b.x + a.y * b.y
-            // c.y = a.x * b.y - a.y * b.x
-            c.x = __fmaf_rn(a.x, b.x, a.y * b.y);   // a.x*b.x + a.y*b.y with single rounding
-            c.y = __fmaf_rn(a.x, b.y, -a.y * b.x);  // a.x*b.y - a.y*b.x
-        } else {
-            // c = a * b
-            // c.x = a.x * b.x - a.y * b.y
-            // c.y = a.x * b.y + a.y * b.x
-            c.x = __fmaf_rn(a.x, b.x, -a.y * b.y);  // a.x*b.x - a.y*b.y with single rounding
-            c.y = __fmaf_rn(a.x, b.y, a.y * b.x);   // a.x*b.y + a.y*b.x
+            // computing c = a * b       (convolution)
+            // or        c = conj(a) * b (cross-correlation)
+            if (CrossCorrelate) {
+                // c = conj(a) * b
+                // c.x = a.x * b.x + a.y * b.y
+                // c.y = a.x * b.y - a.y * b.x
+                c.x = __fmaf_rn(a.x, b.x, a.y * b.y);   // a.x*b.x + a.y*b.y with single rounding
+                c.y = __fmaf_rn(a.x, b.y, -a.y * b.x);  // a.x*b.y - a.y*b.x
+            } else {
+                // c = a * b
+                // c.x = a.x * b.x - a.y * b.y
+                // c.y = a.x * b.y + a.y * b.x
+                c.x = __fmaf_rn(a.x, b.x, -a.y * b.y);  // a.x*b.x - a.y*b.y with single rounding
+                c.y = __fmaf_rn(a.x, b.y, a.y * b.x);   // a.x*b.y + a.y*b.x
+            }
+            reinterpret_cast<float2*>(thread_data)[i] = c;
         }
-        reinterpret_cast<float2*>(thread_data)[i] = c;
+
+        // FFT_inv execution
+        FFT_inv().execute(thread_data, shared_mem, workspace_inv);
+        __syncthreads();
+
+        io_handler_inv.store_rmem_to_gmem(data, thread_data, {}, shared_mem);
+#if defined(__CUDA_ARCH__)
     }
-
-    // FFT_inv execution
-    FFT_inv().execute(thread_data, shared_mem, workspace_inv);
-    __syncthreads();
-
-    io_handler_inv.store_rmem_to_gmem(data, thread_data, {}, shared_mem);
+#endif
 }
 
 // --- Convolution/Cross-correlation 2D FFT Launcher ---
@@ -254,14 +285,14 @@ inline void padded_block_real_conv_2d_launcher(float* input_data, float2* fft_wo
     }
 
     // 4. Construct the kernel pointers and associated attributes
-    auto kernel_r2c_x = padded_block_fft_r2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
+    auto kernel_r2c_x = padded_block_real_conv_r2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
     auto kernel_c2c_y =
-        strided_padded_block_conv_c2c_2d_kernel_with_layout<FFTY_fwd, FFTY_inv, IO_Y_fwd, IO_Y_inv,
-                                                            CrossCorrelate>;
-    auto kernel_c2r_x = padded_block_fft_c2r_2d_kernel_with_layout<FFTX_inv, IO_X_inv>;
+        strided_padded_block_real_conv_c2c_2d_kernel_with_layout<FFTY_fwd, FFTY_inv, IO_Y_fwd,
+                                                                 IO_Y_inv, CrossCorrelate>;
+    auto kernel_c2r_x = padded_block_real_conv_c2r_2d_kernel_with_layout<FFTX_inv, IO_X_inv>;
 
     // The tiled+swizzled Y IO reuses the FFT's own shared memory buffer as scratch space (see
-    // strided_padded_block_conv_c2c_2d_kernel_with_layout), so the Y-kernel's shared memory
+    // strided_padded_block_real_conv_c2c_2d_kernel_with_layout), so the Y-kernel's shared memory
     // allocation must be at least as large as that scratch requirement in addition to whatever
     // FFTY_fwd/FFTY_inv themselves need.
     constexpr unsigned int tiled_io_scratch_bytes =
@@ -357,12 +388,15 @@ int padded_block_real_conv_2d(ScalarType* input_data, ComplexType* fft_workspace
 #ifdef ENABLE_CUDA_ARCH_900
         case 900: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
+#ifdef ENABLE_CUDA_ARCH_1000
+        case 1000: padded_block_real_conv_2d_launcher<1000, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+#endif
 #if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
-        case 1200: padded_block_real_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 1200: padded_block_real_conv_2d_launcher<1200, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
-                      << ". Supported architectures are 800, 860, 870, 890, 900, and 1200."
+                      << ". Supported architectures are 800, 860, 870, 890, 900, 1000, and 1200."
                       << std::endl;
             return -1;
     }

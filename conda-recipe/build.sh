@@ -15,7 +15,7 @@ fi
 # If CUDA_ARCHITECTURES is not set, set it to a default
 if [ -z "${CUDA_ARCHITECTURES:-}" ]; then
     echo "CUDA_ARCHITECTURES not set. Defaulting to a broad multi-arch fat binary."
-    export CUDA_ARCHITECTURES="8.0,8.6,8.9,9.0,12.0"
+    export CUDA_ARCHITECTURES="8.0,8.6,8.9,9.0,10.0,12.0"
 else
     echo "Using specified CUDA_ARCHITECTURES: $CUDA_ARCHITECTURES"
 fi

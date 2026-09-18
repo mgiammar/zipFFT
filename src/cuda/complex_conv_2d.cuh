@@ -6,9 +6,9 @@
 // --- Forward/Inverse c2c 1D Kernel Definition with Index Mappers ---
 template <class FFT, class IO_Handler, typename ComplexType = typename FFT::value_type>
 __launch_bounds__(FFT::max_threads_per_block) __global__
-    void padded_block_fft_c2c_1d_kernel_with_layout(ComplexType* input_data,
-                                                    ComplexType* output_data,
-                                                    typename FFT::workspace_type workspace) {
+    void padded_block_cplx_conv_c2c_1d_kernel_with_layout(ComplexType* input_data,
+                                                          ComplexType* output_data,
+                                                          typename FFT::workspace_type workspace) {
     using complex_type = ComplexType;
 
     IO_Handler io_handler;
@@ -30,7 +30,7 @@ __launch_bounds__(FFT::max_threads_per_block) __global__
 template <class FFT_fwd, class FFT_inv, class IO_Handler_fwd, class IO_Handler_inv,
           bool CrossCorrelate = false>
 __launch_bounds__(FFT_fwd::max_threads_per_block) __global__
-    void strided_padded_block_conv_c2c_2d_kernel_with_layout(
+    void strided_padded_block_cplx_conv_c2c_2d_kernel_with_layout(
         typename FFT_fwd::value_type* data, const typename FFT_fwd::value_type* conv_data,
         typename FFT_fwd::workspace_type workspace_fwd,
         typename FFT_inv::workspace_type workspace_inv) {
@@ -215,14 +215,14 @@ inline void padded_block_complex_conv_2d_launcher(float2* input_data, float2* ff
     }
 
     // 4. Construct the kernel pointers and associated attributes
-    auto kernel_c2c_x_fwd = padded_block_fft_c2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
+    auto kernel_c2c_x_fwd = padded_block_cplx_conv_c2c_1d_kernel_with_layout<FFTX_fwd, IO_X_fwd>;
     auto kernel_c2c_y =
-        strided_padded_block_conv_c2c_2d_kernel_with_layout<FFTY_fwd, FFTY_inv, IO_Y_fwd, IO_Y_inv,
-                                                            CrossCorrelate>;
-    auto kernel_c2c_x_inv = padded_block_fft_c2c_1d_kernel_with_layout<FFTX_inv, IO_X_inv>;
+        strided_padded_block_cplx_conv_c2c_2d_kernel_with_layout<FFTY_fwd, FFTY_inv, IO_Y_fwd,
+                                                                 IO_Y_inv, CrossCorrelate>;
+    auto kernel_c2c_x_inv = padded_block_cplx_conv_c2c_1d_kernel_with_layout<FFTX_inv, IO_X_inv>;
 
     // The tiled+swizzled Y IO reuses the FFT's own shared memory buffer as scratch space (see
-    // strided_padded_block_conv_c2c_2d_kernel_with_layout), so the Y-kernel's shared memory
+    // strided_padded_block_cplx_conv_c2c_2d_kernel_with_layout), so the Y-kernel's shared memory
     // allocation must be at least as large as that scratch requirement in addition to whatever
     // FFTY_fwd/FFTY_inv themselves need.
     constexpr unsigned int tiled_io_scratch_bytes =
@@ -317,12 +317,15 @@ int padded_block_complex_conv_2d(ComplexType* input_data, ComplexType* fft_works
 #ifdef ENABLE_CUDA_ARCH_900
         case 900: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
+#ifdef ENABLE_CUDA_ARCH_1000
+        case 1000: padded_block_complex_conv_2d_launcher<1000, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+#endif
 #if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
-        case 1200: padded_block_complex_conv_2d_launcher<900, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+        case 1200: padded_block_complex_conv_2d_launcher<1200, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
-                      << ". Supported architectures are 800, 860, 870, 890, 900, and 1200."
+                      << ". Supported architectures are 800, 860, 870, 890, 900, 1000, and 1200."
                       << std::endl;
             return -1;
     }

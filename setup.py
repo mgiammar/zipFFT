@@ -76,7 +76,7 @@ parsed_args = parse_cuda_architectures()
 cuda_archs_str = (
     parsed_args.cuda_architectures
     or os.environ.get("CUDA_ARCHITECTURES")
-    or "8.0,8.6,8.9,9.0,12.0"
+    or "8.0,8.6,8.9,9.0,10.0,12.0"
 )
 cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 
@@ -184,6 +184,21 @@ def get_torch_library_path():
     return os.path.join(torch_path, "lib")
 
 
+GENERATED_CUDA_DIR = "src/cuda/generated"
+
+
+def _write_if_changed(path: str, content: str) -> bool:
+    """Write content to path only if current file differs from desired content."""
+    if os.path.exists(path):
+        with open(path) as f:
+            if f.read() == content:
+                return False
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+    return True
+
+
 # (yaml_key, C++ array name, generated header path)
 CONFIG_CODEGEN_TARGETS = [
     (
@@ -245,6 +260,9 @@ def generate_config_headers(yaml_path="configs.yaml"):
     """Renders configs.yaml into the C++ config-array headers included by the real/complex
     conv binding files. This lets new (signal, fft, batch) shapes be added by editing YAML
     instead of hand-writing C++ template instantiations -- see configs.yaml for the schema.
+
+    Returns {yaml_key: expanded_entries} so callers (e.g. generate_real_conv_2d_shards) can
+    reuse the same expanded list instead of re-parsing configs.yaml.
     """
     import yaml
 
@@ -253,16 +271,93 @@ def generate_config_headers(yaml_path="configs.yaml"):
     with open(yaml_path) as f:
         configs = yaml.safe_load(f)
 
+    expanded_by_key = {}
     for yaml_key, array_name, out_path in CONFIG_CODEGEN_TARGETS:
         entries = expand_configs(configs[yaml_key])
-        header_text = _render_config_header(array_name, entries)
+        expanded_by_key[yaml_key] = entries
+        _write_if_changed(out_path, _render_config_header(array_name, entries))
 
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        with open(out_path, "w") as f:
-            f.write(header_text)
+    return expanded_by_key
 
 
-generate_config_headers()
+def _real_conv_dispatch_template_args(entry: dict) -> str:
+    """(SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, BatchSize, CrossCorrelate, UseTiledSwizzledIO, FFTsPerBlockY)"""
+    cross_correlate = "true" if entry["cross_correlate"] else "false"
+    use_tiled_swizzled_io = (
+        "true" if entry.get("use_tiled_swizzled_io", False) else "false"
+    )
+    ffts_per_block_y = entry.get("ffts_per_block_y", 0)
+    return (
+        f"{entry['signal_x']}, {entry['signal_y']}, {entry['fft_x']}, {entry['fft_y']}, "
+        f"{entry['batch']}, {cross_correlate}, {use_tiled_swizzled_io}, {ffts_per_block_y}"
+    )
+
+
+def _real_conv_shard_key(entry: dict) -> str:
+    """Groups configs into shard files by (fft_y, fft_x, cross_correlate) family."""
+    variant = "corr" if entry["cross_correlate"] else "conv"
+    return f"{entry['fft_y']}x{entry['fft_x']}_{variant}"
+
+
+def generate_real_conv_2d_shards(entries: list[dict]) -> list[str]:
+    """Generates one .cu file per (fft_y, fft_x, cross_correlate) family"""
+    shards: dict[str, list[dict]] = {}
+    seen_tuples: dict[tuple, dict] = {}
+    for entry in entries:
+        key = (
+            entry["signal_y"],
+            entry["signal_x"],
+            entry["fft_y"],
+            entry["fft_x"],
+            entry["batch"],
+            entry["cross_correlate"],
+        )
+        if key in seen_tuples:
+            raise ValueError(
+                f"Duplicate (signal_y, signal_x, fft_y, fft_x, batch, cross_correlate) "
+                f"config in configs.yaml's real_conv2d section: {key} appears in both "
+                f"{seen_tuples[key]} and {entry}. Each combination must be unique -- "
+                "it would otherwise produce two explicit instantiations of the same "
+                "dispatch_padded_real_conv<...> specialization (a link error)."
+            )
+        seen_tuples[key] = entry
+        shards.setdefault(_real_conv_shard_key(entry), []).append(entry)
+
+    generated_paths = []
+    for key in sorted(shards):
+        shard_entries = shards[key]
+        out_path = f"{GENERATED_CUDA_DIR}/real_conv_2d_shard_{key}.cu"
+        lines = [
+            "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
+            f"// Explicit instantiations of dispatch_padded_real_conv for the {key} "
+            f"family ({len(shard_entries)} configs). Add/remove shapes in configs.yaml "
+            "and rebuild instead.",
+            '#include "../real_conv_2d_dispatch_impl.cuh"',
+            "",
+        ]
+        for entry in shard_entries:
+            lines.append(
+                "template void dispatch_padded_real_conv<"
+                f"{_real_conv_dispatch_template_args(entry)}>"
+                "(float*, float2*, const float2*, float*, int, cudaStream_t);"
+            )
+        lines.append("")
+        _write_if_changed(out_path, "\n".join(lines))
+        generated_paths.append(out_path)
+
+    if os.path.isdir(GENERATED_CUDA_DIR):
+        expected = {os.path.basename(p) for p in generated_paths}
+        for fname in os.listdir(GENERATED_CUDA_DIR):
+            if fname.startswith("real_conv_2d_shard_") and fname not in expected:
+                os.remove(os.path.join(GENERATED_CUDA_DIR, fname))
+
+    return generated_paths
+
+
+expanded_configs_by_key = generate_config_headers()
+real_conv_2d_shard_sources = generate_real_conv_2d_shards(
+    expanded_configs_by_key["real_conv2d"]
+)
 
 DEFAULT_COMPILE_ARGS = get_compile_args()
 
@@ -275,7 +370,7 @@ ext_modules = []
 if "padded_rconv2d" in enabled_extensions:
     padded_real_conv_2d_extension = CUDAExtension(
         name="zipfft.padded_rconv2d",
-        sources=["src/cuda/real_conv_2d_binding.cu"],
+        sources=["src/cuda/real_conv_2d_binding.cu"] + real_conv_2d_shard_sources,
         include_dirs=[pybind11.get_include()] + get_extra_include_dirs(),
         library_dirs=[TORCH_LIB_DIR],
         libraries=[

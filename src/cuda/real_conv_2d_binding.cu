@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "generated_real_conv_2d_configs.hpp"
-#include "real_conv_2d.cuh"
+#include "real_conv_2d_dispatch.hpp"
 
 // Convolution configuration structure for padded 2D real convolution
 struct PaddedRealConvConfig2D {
@@ -50,20 +50,10 @@ struct PaddedRealConvConfig2D {
 // SUPPORTED_CONV_CONFIGS is generated from configs.yaml at build time; see
 // generated_real_conv_2d_configs.hpp (included above).
 
-// Template dispatch functions for each supported configuration
-template <unsigned int SignalLengthX, unsigned int SignalLengthY, unsigned int FFTSizeX,
-          unsigned int FFTSizeY, unsigned int BatchSize, bool CrossCorrelate,
-          bool UseTiledSwizzledIO, unsigned int FFTsPerBlockY>
-void dispatch_padded_real_conv(float* input_data, float2* fft_workspace, const float2* conv_data,
-                               float* output_data, int device_index, cudaStream_t stream) {
-    // NOTE: elements_per_thread and ffts_per_block_x are left at their cuFFTDx-recommended
-    // defaults (0); only ffts_per_block_y is ever overridden, and only because
-    // UseTiledSwizzledIO requires it (see real_conv_2d_io.hpp).
-    padded_block_real_conv_2d<float, float2, SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY,
-                              BatchSize, CrossCorrelate, 0, 0, 0, FFTsPerBlockY,
-                              UseTiledSwizzledIO>(input_data, fft_workspace, conv_data,
-                                                  output_data, device_index, stream);
-}
+// dispatch_padded_real_conv is declared above (real_conv_2d_dispatch.hpp) and defined in the
+// generated per-family shard .cu files (see real_conv_2d_dispatch_impl.cuh and setup.py's
+// generate_real_conv_2d_shards()) -- this TU only takes its address below, so it never compiles
+// a cuFFTDx kernel itself.
 
 // Helper template to create dispatch table entries at compile time
 template <std::size_t... Is>

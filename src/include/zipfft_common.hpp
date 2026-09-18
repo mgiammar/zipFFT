@@ -55,6 +55,22 @@ inline unsigned int get_cuda_device_arch() {
     return static_cast<unsigned>(major) * 100 + static_cast<unsigned>(minor) * 10;
 }
 
+// Returns true if a kernel instantiated with SM<compiled_arch> (i.e. `Arch` in
+// padded_block_real_conv_2d_launcher / padded_block_complex_conv_2d_launcher) is the one that
+// padded_block_real_conv_2d's / padded_block_complex_conv_2d's runtime `switch (arch)` will
+// actually select and launch when running on a device whose compute capability is `device_arch`
+// (the value of __CUDA_ARCH__ during the device-code compilation pass that produced that SASS).
+//
+// This must stay in sync with those switch statements, where every case maps 1:1
+// (device_arch == compiled_arch). Kernel bodies use this to skip compiling cuFFTDx's
+// (expensive) architecture-specific FFT execution on the -gencode passes that will never run
+// that particular instantiation -- see the `if constexpr` guards in real_conv_2d.cuh /
+// complex_conv_2d.cuh.
+__host__ __device__ constexpr bool cuda_arch_pass_matches(unsigned int compiled_arch,
+                                                          unsigned int device_arch) {
+    return compiled_arch == device_arch;
+}
+
 namespace detail {
 template <typename, typename = void>
 struct has_x_field : std::false_type {};
