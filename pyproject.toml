@@ -2,7 +2,7 @@
 requires = [
     "setuptools>=61.0",
     "pybind11",
-    "torch>=2.7.0",
+    "torch>=2.10.0",
     "numpy",
     "nvidia-mathdx>=25.06",
     "pyyaml",
@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zipfft"
-version = "0.0.3alpha"
+version = "0.1.0"
 description = "Python bindings for Zero Implicit Padded (zip) FFT kernels in CUDA/cuFFTDx."
 authors = [{ name = "Matthew Giammar", email = "mdgiammar@gmail.com" }]
 readme = "README.md"
@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 # Python package dependencies
-dependencies = ["numpy", "torch>=2.7.0", "nvidia-mathdx>=25.06", "pyyaml"]
+dependencies = ["numpy", "torch>=2.10.0", "nvidia-mathdx>=25.06", "pyyaml"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
