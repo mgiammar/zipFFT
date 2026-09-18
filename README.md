@@ -98,13 +98,19 @@ Otherwise, see the [INSTALL.md](INSTALL.md) file for more detailed installation 
 
 ## Adding support for more shapes/sizes
 
-zipFFT compiles specific shape configurations at install time. The supported configurations are defined in [configs.yaml](configs.yaml). To add a new configuration, add new entries to the `configs.yaml` file,
+zipFFT compiles specific shape configurations at install time. The supported configurations are defined in [configs.yaml](configs.yaml), under each path's `test_configs` (explicit one-off shapes) and `production_matrix` (compact shape *families*, expanded via a cartesian product of template sizes / FFT sizes / batches). To add a new template size or batch to an existing family, extend the matching `production_matrix` entry's list:
 
 ```yaml
-       - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 32, cross_correlate: true}
-+++    - {signal_y: 768, signal_x: 768, fft_y: 2048, fft_x: 2048, batch: 8, cross_correlate: true}
-+++    - {signal_y: 768, signal_x: 768, fft_y: 4096, fft_x: 4096, batch: 8, cross_correlate: true}
+       - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+         fft_shapes: [[4096, 4096]]
++++      batches: [1, 4, 8, 12, 16, 20, 24, 28, 32, 40]
+-        batches: [1, 4, 8, 12, 16, 20, 24, 28, 32]
+         cross_correlate: true
+         use_tiled_swizzled_io: true
+         ffts_per_block_y: 2
 ```
+
+A new family (e.g. a new FFT size) is a new `production_matrix` entry; a genuinely one-off shape goes in `test_configs` as a flat `{signal_y: .., signal_x: .., fft_y: .., fft_x: .., batch: .., cross_correlate: ..}` entry.
 
 Then rebuild:
 
@@ -114,7 +120,7 @@ pip install -e .
 
 ### cuFFTDx size limitations
 
-Note that **cuFFTDx does not support arbitrary FFT sizes**. Supported sizes depend on your GPU architecture and are generally:
+Note that **cuFFTDx does not support arbitrary FFT sizes**. Supported sizes depend on your GPU architecture.
 
 Refer to the [cuFFTDx documentation](https://docs.nvidia.com/cuda/cufftdx/index.html) for size support on your target architecture.
 

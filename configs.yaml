@@ -2,12 +2,37 @@
 #
 # This file is the single source of truth for which (signal, fft, batch, cross_correlate)
 # configurations get compiled into the `padded_rconv2d` and `padded_cconv2d` extensions.
-# `setup.py` reads it at build time and generates the corresponding C++ config arrays
-# (src/cuda/generated_real_conv_2d_configs.hpp, src/cuda/generated_complex_conv_2d_configs.hpp).
+# `setup.py` reads it at build time (via configs_schema.expand_configs) and generates the
+# corresponding C++ config arrays (src/cuda/generated_real_conv_2d_configs.hpp,
+# src/cuda/generated_complex_conv_2d_configs.hpp). benchmark/sweep.py reads it the same way.
 #
-# To add a new shape: add an entry below and rebuild
+# Each top-level key (real_conv2d, complex_conv2d) holds two kinds of entries:
 #
-# Fields:
+#   test_configs      - a flat list of explicit one-off entries (same fields as below). Use
+#                        this for small/odd shapes exercised mainly for correctness coverage,
+#                        where every entry differs enough that a matrix wouldn't simplify
+#                        anything.
+#
+#   production_matrix - a list of *matrix* entries. Each one expands into the flat entry
+#                        schema below via the cartesian product of:
+#                          signal_shapes:   [[signal_y, signal_x], ...]
+#                          fft_shapes:      [[fft_y, fft_x], ...]
+#                          batches:         [batch, ...]
+#                          cross_correlate: true | false | [true, false]
+#                        plus the shared (non-varying) fields use_tiled_swizzled_io /
+#                        ffts_per_block_y. Use this for a family of shapes that share an FFT
+#                        size and IO strategy and only vary template size and/or batch -- one
+#                        matrix entry can replace dozens of near-duplicate explicit entries.
+#
+# To add a new shape:
+#   - a new batch size or template size for an existing family -> add it to the matching
+#     production_matrix entry's `batches` / `signal_shapes` list
+#   - a new family (e.g. a new production FFT size) -> add a new production_matrix entry
+#   - a genuinely new one-off shape (e.g. a test-only correctness case) -> append to
+#     test_configs
+# ...then rebuild.
+#
+# Field reference (same meaning in test_configs entries and after production_matrix expansion):
 #   signal_y, signal_x      - input signal (template) dimensions
 #   fft_y, fft_x            - padded FFT dimensions (power-of-two, must be a supported cuFFTDx size)
 #   batch                   - batch size
@@ -23,89 +48,116 @@
 #                             makes the shared-memory staging bank-conflict-free relies on it.
 
 real_conv2d:
-  # Convolution configurations (TEST CONFIGURATIONS)
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: false}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
-  # The four 512-sized entries below also exercise the tiled+swizzled Y-dimension IO path
-  # (see real_conv_2d_io.hpp) alongside the plain strided path used everywhere else in this
-  # "TEST CONFIGURATIONS" block, so both IO strategies get correctness coverage.
-  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: false}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: false}
-  # Cross-correlation configurations (TEST CONFIGURATIONS)
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
-  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
-  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
-  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
-  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
-  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
-  - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
-  - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
-  - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true}
-  - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
-  - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true}
-  - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
-  - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
-  - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
-  # Cross-correlation for Falcon 4i images (4096x4096) -- production-grade sizes, always use the
-  # tiled+swizzled Y-dimension IO path: at this size the plain strided path's ~25% memory-sector
-  # utilization (see real_conv_2d_io.hpp) is the dominant bottleneck.
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 4, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 8, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 12, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 16, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 20, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 24, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 28, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 32, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
+  test_configs:
+    # ------------------------------------------------
+    # Convolution configurations (TEST CONFIGURATIONS)
+    # ------------------------------------------------
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: false}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
+    # The four 512-sized entries below also exercise the tiled+swizzled Y-dimension IO path
+    # (see real_conv_2d_io.hpp) alongside the plain strided path used everywhere else in this
+    # "TEST CONFIGURATIONS" block, so both IO strategies get correctness coverage.
+    - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: false}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: false}
+    # ------------------------------------------------------
+    # Cross-correlation configurations (TEST CONFIGURATIONS)
+    # ------------------------------------------------------
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+    - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 384, signal_x: 384, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
+    - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+    - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+    - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+    - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 8, cross_correlate: true}
+    - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+    - {signal_y: 64, signal_x: 64, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+    - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 1, cross_correlate: true}
+    - {signal_y: 128, signal_x: 128, fft_y: 512, fft_x: 512, batch: 4, cross_correlate: true}
+    - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true}
+    - {signal_y: 128, signal_x: 64, fft_y: 512, fft_x: 256, batch: 4, cross_correlate: true}
+    - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
+    - {signal_y: 64, signal_x: 128, fft_y: 256, fft_x: 512, batch: 4, cross_correlate: true}
+
+  production_matrix:
+    # ------------------------------------------------------
+    # Cross-correlation for Falcon 4i images and downsampled
+    # derivatives (4096x4096, 2048x2048, 1024x1024)
+    # ------------------------------------------------------
+    - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+      fft_shapes: [[4096, 4096], [2048, 2048], [1024, 1024]]
+      batches: [1, 4, 8, 12, 16, 20, 24, 28, 32]
+      cross_correlate: true
+      use_tiled_swizzled_io: true
+      ffts_per_block_y: 2
+    # ----------------------------------------------------------------
+    # Cross-correlation for K3 detector images (5760x4092) padded
+    # up to (5832x4096). Includes 2x downsampled padded to (3125x2048)
+    #-----------------------------------------------------------------
+    - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+      fft_shapes: [[5832, 4096], [3125, 2048]]
+      batches: [1, 4, 8, 12, 16, 20, 24, 28, 32]
+      cross_correlate: true
+      use_tiled_swizzled_io: true
+      ffts_per_block_y: 2
 
 complex_conv2d:
-  # Convolution configurations (TEST CONFIGURATIONS)
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: false}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false}
-  # Cross-correlation configurations (TEST CONFIGURATIONS)
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
-  - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
-  - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: true}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
-  - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
-  - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
-  - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
-  - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
-  - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
-  # Cross-correlation for Falcon 4i images (4096x4096) -- production-grade sizes, always use the
-  # tiled+swizzled Y-dimension IO path (see the matching real_conv2d block above for rationale).
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 4, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 8, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 12, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 16, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 20, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 24, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 28, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
-  - {signal_y: 512, signal_x: 512, fft_y: 4096, fft_x: 4096, batch: 32, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 2}
+  test_configs:
+    # Convolution configurations (TEST CONFIGURATIONS)
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: false}
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: false}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: false}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: false}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: false}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: false}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: false, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: false}
+    # Cross-correlation configurations (TEST CONFIGURATIONS)
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+    - {signal_y: 48, signal_x: 48, fft_y: 64, fft_x: 64, batch: 8, cross_correlate: true}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+    - {signal_y: 96, signal_x: 96, fft_y: 128, fft_x: 128, batch: 4, cross_correlate: true}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 1, cross_correlate: true}
+    - {signal_y: 192, signal_x: 192, fft_y: 256, fft_x: 256, batch: 4, cross_correlate: true}
+    - {signal_y: 384, signal_x: 192, fft_y: 512, fft_x: 256, batch: 1, cross_correlate: true, use_tiled_swizzled_io: true, ffts_per_block_y: 4}
+    - {signal_y: 192, signal_x: 384, fft_y: 256, fft_x: 512, batch: 1, cross_correlate: true}
+    - {signal_y: 16, signal_x: 16, fft_y: 64, fft_x: 64, batch: 1, cross_correlate: true}
+    - {signal_y: 32, signal_x: 32, fft_y: 128, fft_x: 128, batch: 1, cross_correlate: true}
+
+  production_matrix:
+    # ------------------------------------------------------
+    # Cross-correlation for Falcon 4i images and downsampled
+    # derivatives (4096x4096, 2048x2048, 1024x1024)
+    # ------------------------------------------------------
+    - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+      fft_shapes: [[4096, 4096], [2048, 2048], [1024, 1024]]
+      batches: [1, 4, 8, 12, 16, 20, 24, 28, 32]
+      cross_correlate: true
+      use_tiled_swizzled_io: true
+      ffts_per_block_y: 2
+    # ----------------------------------------------------------------
+    # Cross-correlation for K3 detector images (5760x4092) padded
+    # up to (5832x4096). Includes 2x downsampled padded to (3125x2048)
+    #-----------------------------------------------------------------
+    - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+      fft_shapes: [[5832, 4096], [3125, 2048]]
+      batches: [1, 4, 8, 12, 16, 20, 24, 28, 32]
+      cross_correlate: true
+      use_tiled_swizzled_io: true
+      ffts_per_block_y: 2

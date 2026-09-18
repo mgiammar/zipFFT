@@ -7,6 +7,12 @@ import sys
 import os
 import shutil
 
+# setuptools.build_meta's default backend execs this file without putting its own directory
+# on sys.path (unlike a plain `python setup.py` invocation), so `import configs_schema` below
+# would fail under `pip install` despite working when this script is run directly.
+# See https://github.com/pypa/setuptools/issues/1642.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 # Auto-detect CUDA_HOME before importing torch so that cpp_extension.CUDA_HOME
 # is initialized correctly. In conda build environments the host PyTorch may be
 # a CPU-only build (torch.cuda._is_compiled() == False), which causes
@@ -130,7 +136,8 @@ def get_compile_args():
     """Generate compile arguments including CUDA architectures."""
     nvcc_args = [
         "-O3",
-        "-std=c++17",
+        # PyTorch >= ~2.9 requires C++20 (its headers #error out under C++17).
+        "-std=c++20",
         # NOTE: Necessary to un-define PyTorch default macros with fp16/bf16 to get
         # cuFFTDx library to compile correctly.
         "-U__CUDA_NO_HALF_OPERATORS__",
@@ -164,7 +171,7 @@ def get_compile_args():
         )
 
     return {
-        "cxx": ["-O3"],
+        "cxx": ["-O3", "-std=c++20"],
         "nvcc": nvcc_args,
     }
 
@@ -192,58 +199,67 @@ CONFIG_CODEGEN_TARGETS = [
 ]
 
 
+def _entry_to_cpp_tuple(entry: dict) -> str:
+    """Formats one shape entry as a C++ brace-init tuple literal, e.g.
+    '{48, 48, 64, 64, 1, false, false, 0},'. Field order must match the std::tuple type
+    in _render_config_header.
+    """
+    cross_correlate = "true" if entry["cross_correlate"] else "false"
+    use_tiled_swizzled_io = (
+        "true" if entry.get("use_tiled_swizzled_io", False) else "false"
+    )
+    ffts_per_block_y = entry.get("ffts_per_block_y", 0)
+    return (
+        f"        {{{entry['signal_y']}, {entry['signal_x']}, {entry['fft_y']}, "
+        f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}, "
+        f"{use_tiled_swizzled_io}, {ffts_per_block_y}}},"
+    )
+
+
+def _render_config_header(array_name: str, entries: list[dict]) -> str:
+    """Renders the full contents of one generated_*_configs.hpp file: a std::array of
+    std::tuple, one tuple per entry."""
+    lines = [
+        "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
+        "// Add/remove shapes in configs.yaml and rebuild instead.",
+        "#pragma once",
+        "",
+        "#include <array>",
+        "#include <tuple>",
+        "",
+        "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate,",
+        "//  use_tiled_swizzled_io, ffts_per_block_y)",
+        "static constexpr std::array<",
+        "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool,",
+        "               bool, unsigned int>,",
+        f"    {len(entries)}>",
+        f"    {array_name} = {{{{",
+        *(_entry_to_cpp_tuple(entry) for entry in entries),
+        "    }};",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def generate_config_headers(yaml_path="configs.yaml"):
-    """Render configs.yaml into the C++ config-array headers included by the real/complex
+    """Renders configs.yaml into the C++ config-array headers included by the real/complex
     conv binding files. This lets new (signal, fft, batch) shapes be added by editing YAML
     instead of hand-writing C++ template instantiations -- see configs.yaml for the schema.
     """
     import yaml
 
+    from configs_schema import expand_configs
+
     with open(yaml_path) as f:
         configs = yaml.safe_load(f)
 
     for yaml_key, array_name, out_path in CONFIG_CODEGEN_TARGETS:
-        entries = configs[yaml_key]
-        lines = [
-            "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
-            "// Add/remove shapes in configs.yaml and rebuild instead.",
-            "#pragma once",
-            "",
-            "#include <array>",
-            "#include <tuple>",
-            "",
-            "// (signal_length_y, signal_length_x, fft_size_y, fft_size_x, batch_size, cross_correlate,",
-            "//  use_tiled_swizzled_io, ffts_per_block_y)",
-            "static constexpr std::array<",
-            "    std::tuple<unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, bool,",
-            "               bool, unsigned int>,",
-            f"    {len(entries)}>",
-            f"    {array_name} = {{{{",
-        ]
-        for entry in entries:
-            cross_correlate = "true" if entry["cross_correlate"] else "false"
-            use_tiled_swizzled_io = entry.get("use_tiled_swizzled_io", False)
-            ffts_per_block_y = entry.get("ffts_per_block_y", 0)
-            if use_tiled_swizzled_io and not (
-                ffts_per_block_y >= 2 and ffts_per_block_y % 2 == 0
-            ):
-                raise ValueError(
-                    f"configs.yaml entry {entry} sets use_tiled_swizzled_io: true but "
-                    "ffts_per_block_y is not an even number >= 2 (required by the "
-                    "tiled+swizzled IO path's bank-conflict-free padding scheme. "
-                    "see real_conv_2d_io.hpp)."
-                )
-            lines.append(
-                f"        {{{entry['signal_y']}, {entry['signal_x']}, {entry['fft_y']}, "
-                f"{entry['fft_x']}, {entry['batch']}, {cross_correlate}, "
-                f"{'true' if use_tiled_swizzled_io else 'false'}, {ffts_per_block_y}}},"
-            )
-        lines.append("    }};")
-        lines.append("")
+        entries = expand_configs(configs[yaml_key])
+        header_text = _render_config_header(array_name, entries)
 
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, "w") as f:
-            f.write("\n".join(lines))
+            f.write(header_text)
 
 
 generate_config_headers()

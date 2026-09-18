@@ -34,6 +34,9 @@ import build as build_mod
 BENCHMARK_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BENCHMARK_DIR.parent
 
+sys.path.insert(0, str(REPO_ROOT))
+from configs_schema import expand_configs  # noqa: E402
+
 DEFAULT_SHAPES = {
     "real": [
         {
@@ -104,7 +107,7 @@ def load_shapes(shapes_file: str | None, shapes_key: str, path: str) -> list[dic
         raise KeyError(
             f"'{shapes_key}' not found in {shapes_path} (top-level keys: {list(data)})"
         )
-    return data[shapes_key]
+    return expand_configs(data[shapes_key])
 
 
 def slugify_gpu_name(name: str) -> str:
