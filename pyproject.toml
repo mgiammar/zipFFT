@@ -6,6 +6,7 @@ requires = [
     "numpy",
     "nvidia-mathdx>=25.06",
     "pyyaml",
+    "ninja",
 ]
 build-backend = "setuptools.build_meta"
 
