@@ -125,7 +125,7 @@ environment's PyTorch may not match the CUDA build you have installed.
 
 To reduce compile time by targeting only your GPU's compute capability and skipping unused modules.
 
-> Replace `8.9` with your GPU's SM version (e.g. `8.0` for A100, `9.0` for H100, `10.0` for B200, `12.0` for RTX Blackwell). If `CUDA_ARCHITECTURES` is not set, all supported architectures are compiled by default. Helpful list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
+> Replace `8.9` with your GPU's SM version (e.g. `8.0` for A100, `9.0` for H100, `10.0` for B200, `10.3` for B300, `12.0` for RTX Blackwell). If `CUDA_ARCHITECTURES` is not set, all supported architectures are compiled by default. Helpful list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
 
 ```bash
 CUDA_ARCHITECTURES=8.9 ENABLED_EXTENSIONS=padded_rconv2d pip install -e .

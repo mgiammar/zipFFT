@@ -52,7 +52,7 @@ struct PaddedRealConvConfig2D {
 
 // dispatch_padded_real_conv is declared above (real_conv_2d_dispatch.hpp) and defined in the
 // generated per-family shard .cu files (see real_conv_2d_dispatch_impl.cuh and setup.py's
-// generate_real_conv_2d_shards()) -- this TU only takes its address below, so it never compiles
+// generate_conv_2d_shards()) -- this TU only takes its address below, so it never compiles
 // a cuFFTDx kernel itself.
 
 // Helper template to create dispatch table entries at compile time

@@ -7,9 +7,9 @@
 // dispatch_padded_real_conv<...> specialization), but never calls or instantiates the body, so
 // it never compiles a single cuFFTDx kernel itself.
 //
-// The definition lives in real_conv_2d_dispatch_impl.cuh, which IS included by cuFFTDx and is
+// The definition lives in real_conv_2d_dispatch_impl.cuh, which DOES include cuFFTDx and is
 // in turn included only by the generated per-family shard .cu files under src/cuda/generated/
-// (see setup.py's generate_real_conv_2d_shards()). Each shard provides the explicit
+// (see setup.py's generate_conv_2d_shards()). Each shard provides the explicit
 // instantiations for its slice of SUPPORTED_CONV_CONFIGS; the linker resolves the binding TU's
 // function-pointer references against those symbols.
 #pragma once

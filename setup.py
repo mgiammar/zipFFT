@@ -79,7 +79,7 @@ parsed_args = parse_cuda_architectures()
 cuda_archs_str = (
     parsed_args.cuda_architectures
     or os.environ.get("CUDA_ARCHITECTURES")
-    or "8.0,8.6,8.9,9.0,10.0,12.0"
+    or "8.0,8.6,8.9,9.0,10.0,10.3,12.0"
 )
 cuda_architectures = [arch.strip() for arch in cuda_archs_str.split(",")]
 
@@ -264,7 +264,7 @@ def generate_config_headers(yaml_path="configs.yaml"):
     conv binding files. This lets new (signal, fft, batch) shapes be added by editing YAML
     instead of hand-writing C++ template instantiations -- see configs.yaml for the schema.
 
-    Returns {yaml_key: expanded_entries} so callers (e.g. generate_real_conv_2d_shards) can
+    Returns {yaml_key: expanded_entries} so callers (e.g. generate_conv_2d_shards) can
     reuse the same expanded list instead of re-parsing configs.yaml.
     """
     import yaml
@@ -283,7 +283,7 @@ def generate_config_headers(yaml_path="configs.yaml"):
     return expanded_by_key
 
 
-def _real_conv_dispatch_template_args(entry: dict) -> str:
+def _conv_dispatch_template_args(entry: dict) -> str:
     """(SignalLengthX, SignalLengthY, FFTSizeX, FFTSizeY, BatchSize, CrossCorrelate, UseTiledSwizzledIO, FFTsPerBlockY)"""
     cross_correlate = "true" if entry["cross_correlate"] else "false"
     use_tiled_swizzled_io = (
@@ -296,14 +296,33 @@ def _real_conv_dispatch_template_args(entry: dict) -> str:
     )
 
 
-def _real_conv_shard_key(entry: dict) -> str:
+def _conv_shard_key(entry: dict) -> str:
     """Groups configs into shard files by (fft_y, fft_x, cross_correlate) family."""
     variant = "corr" if entry["cross_correlate"] else "conv"
     return f"{entry['fft_y']}x{entry['fft_x']}_{variant}"
 
 
-def generate_real_conv_2d_shards(entries: list[dict]) -> list[str]:
-    """Generates one .cu file per (fft_y, fft_x, cross_correlate) family"""
+# (yaml_key, shard filename prefix, dispatch-impl header, dispatch function, signature)
+CONV_SHARD_TARGETS = {
+    "real_conv2d": (
+        "real_conv_2d_shard_",
+        "real_conv_2d_dispatch_impl.cuh",
+        "dispatch_padded_real_conv",
+        "(float*, float2*, const float2*, float*, int, cudaStream_t)",
+    ),
+    "complex_conv2d": (
+        "complex_conv_2d_shard_",
+        "complex_conv_2d_dispatch_impl.cuh",
+        "dispatch_padded_complex_conv",
+        "(float2*, float2*, const float2*, float2*, int, cudaStream_t)",
+    ),
+}
+
+
+def generate_conv_2d_shards(yaml_key: str, entries: list[dict]) -> list[str]:
+    """Generates one .cu file per (fft_y, fft_x, cross_correlate) family for the given
+    configs.yaml section, so each family compiles as its own TU in parallel."""
+    shard_prefix, impl_header, dispatch_fn, signature = CONV_SHARD_TARGETS[yaml_key]
     shards: dict[str, list[dict]] = {}
     seen_tuples: dict[tuple, dict] = {}
     for entry in entries:
@@ -318,31 +337,30 @@ def generate_real_conv_2d_shards(entries: list[dict]) -> list[str]:
         if key in seen_tuples:
             raise ValueError(
                 f"Duplicate (signal_y, signal_x, fft_y, fft_x, batch, cross_correlate) "
-                f"config in configs.yaml's real_conv2d section: {key} appears in both "
+                f"config in configs.yaml's {yaml_key} section: {key} appears in both "
                 f"{seen_tuples[key]} and {entry}. Each combination must be unique -- "
                 "it would otherwise produce two explicit instantiations of the same "
-                "dispatch_padded_real_conv<...> specialization (a link error)."
+                f"{dispatch_fn}<...> specialization (a link error)."
             )
         seen_tuples[key] = entry
-        shards.setdefault(_real_conv_shard_key(entry), []).append(entry)
+        shards.setdefault(_conv_shard_key(entry), []).append(entry)
 
     generated_paths = []
     for key in sorted(shards):
         shard_entries = shards[key]
-        out_path = f"{GENERATED_CUDA_DIR}/real_conv_2d_shard_{key}.cu"
+        out_path = f"{GENERATED_CUDA_DIR}/{shard_prefix}{key}.cu"
         lines = [
             "// Auto-generated from configs.yaml by setup.py -- do not edit directly.",
-            f"// Explicit instantiations of dispatch_padded_real_conv for the {key} "
+            f"// Explicit instantiations of {dispatch_fn} for the {key} "
             f"family ({len(shard_entries)} configs). Add/remove shapes in configs.yaml "
             "and rebuild instead.",
-            '#include "../real_conv_2d_dispatch_impl.cuh"',
+            f'#include "../{impl_header}"',
             "",
         ]
         for entry in shard_entries:
             lines.append(
-                "template void dispatch_padded_real_conv<"
-                f"{_real_conv_dispatch_template_args(entry)}>"
-                "(float*, float2*, const float2*, float*, int, cudaStream_t);"
+                f"template void {dispatch_fn}<"
+                f"{_conv_dispatch_template_args(entry)}>{signature};"
             )
         lines.append("")
         _write_if_changed(out_path, "\n".join(lines))
@@ -351,15 +369,18 @@ def generate_real_conv_2d_shards(entries: list[dict]) -> list[str]:
     if os.path.isdir(GENERATED_CUDA_DIR):
         expected = {os.path.basename(p) for p in generated_paths}
         for fname in os.listdir(GENERATED_CUDA_DIR):
-            if fname.startswith("real_conv_2d_shard_") and fname not in expected:
+            if fname.startswith(shard_prefix) and fname not in expected:
                 os.remove(os.path.join(GENERATED_CUDA_DIR, fname))
 
     return generated_paths
 
 
 expanded_configs_by_key = generate_config_headers()
-real_conv_2d_shard_sources = generate_real_conv_2d_shards(
-    expanded_configs_by_key["real_conv2d"]
+real_conv_2d_shard_sources = generate_conv_2d_shards(
+    "real_conv2d", expanded_configs_by_key["real_conv2d"]
+)
+complex_conv_2d_shard_sources = generate_conv_2d_shards(
+    "complex_conv2d", expanded_configs_by_key["complex_conv2d"]
 )
 
 DEFAULT_COMPILE_ARGS = get_compile_args()
@@ -390,7 +411,7 @@ if "padded_rconv2d" in enabled_extensions:
 if "padded_cconv2d" in enabled_extensions:
     padded_complex_conv_2d_extension = CUDAExtension(
         name="zipfft.padded_cconv2d",
-        sources=["src/cuda/complex_conv_2d_binding.cu"],
+        sources=["src/cuda/complex_conv_2d_binding.cu"] + complex_conv_2d_shard_sources,
         include_dirs=[pybind11.get_include()] + get_extra_include_dirs(),
         library_dirs=[TORCH_LIB_DIR],
         libraries=[

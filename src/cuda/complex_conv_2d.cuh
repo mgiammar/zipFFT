@@ -320,12 +320,15 @@ int padded_block_complex_conv_2d(ComplexType* input_data, ComplexType* fft_works
 #ifdef ENABLE_CUDA_ARCH_1000
         case 1000: padded_block_complex_conv_2d_launcher<1000, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
+#ifdef ENABLE_CUDA_ARCH_1030
+        case 1030: padded_block_complex_conv_2d_launcher<1030, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
+#endif
 #if defined(ENABLE_CUDA_ARCH_1200) || defined(ENABLE_CUDA_ARCH_120)
         case 1200: padded_block_complex_conv_2d_launcher<1200, FFTSizeX, FFTSizeY, Batch, SignalLengthX, SignalLengthY, elements_per_thread_x, elements_per_thread_y, FFTs_per_block_x, FFTs_per_block_y, CrossCorrelate, UseTiledSwizzledIO>(input_data, fft_workspace, conv_data, output_data, device, stream); break;
 #endif
         default:
             std::cerr << "Unsupported CUDA architecture: " << arch
-                      << ". Supported architectures are 800, 860, 870, 890, 900, 1000, and 1200."
+                      << ". Supported architectures are 800, 860, 870, 890, 900, 1000, 1030, and 1200."
                       << std::endl;
             return -1;
     }
