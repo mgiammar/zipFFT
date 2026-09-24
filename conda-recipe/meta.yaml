@@ -6,9 +6,10 @@
 # Install the locally-built package:
 #   conda install --use-local zipfft
 #
-# Set the package version at build time:
-#   ZIPFFT_VERSION=0.1.0 conda build conda-recipe/ -c nvidia -c pytorch
-{% set version = environ.get('ZIPFFT_VERSION', '0.0.3') %}
+# The package version is read from pyproject.toml's [project] table, the
+# single source of truth for the package version.
+{% set pyproject = load_file_data("../pyproject.toml", from_recipe_dir=True) %}
+{% set version = pyproject.get('project', {}).get('version') %}
 
 package:
   name: zipfft

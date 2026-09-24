@@ -3,8 +3,6 @@
 import warnings
 from typing import List
 
-__version__ = "0.0.3alpha"
-
 
 # # Try to import each extension
 # try:
@@ -15,12 +13,17 @@ __version__ = "0.0.3alpha"
 from . import padded_rconv2d
 from . import padded_cconv2d
 
-# Load build config if available
+# Load build config if available. VERSION/CUDA_ARCHITECTURES/ENABLED_EXTENSIONS are
+# generated at build time from pyproject.toml's [project] version (the single source
+# of truth) by setup.py.
 try:
-    from .build_config import CUDA_ARCHITECTURES, ENABLED_EXTENSIONS
+    from .build_config import CUDA_ARCHITECTURES, ENABLED_EXTENSIONS, VERSION
 except ImportError:
     CUDA_ARCHITECTURES = []
     ENABLED_EXTENSIONS = []
+    VERSION = "0.0.0+unknown"
+
+__version__ = VERSION
 
 
 def is_extension_available(extension_name: str) -> bool:

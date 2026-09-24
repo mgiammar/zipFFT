@@ -6,6 +6,7 @@ import argparse
 import sys
 import os
 import shutil
+import tomllib
 
 # setuptools.build_meta's default backend execs this file without putting its own directory
 # on sys.path (unlike a plain `python setup.py` invocation), so `import configs_schema` below
@@ -33,7 +34,9 @@ import torch.utils.cpp_extension as _cpp_ext
 if _cpp_ext.CUDA_HOME is None and os.environ.get("CUDA_HOME"):
     _cpp_ext.CUDA_HOME = os.environ["CUDA_HOME"]
 
-__version__ = "0.0.3alpha"
+# pyproject.toml is the single source of truth for the package version.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pyproject.toml"), "rb") as f:
+    __version__ = tomllib.load(f)["project"]["version"]
 
 
 # Parse command line arguments for CUDA architectures
@@ -412,14 +415,12 @@ with open("src/zipfft/build_config.py", "w") as f:
     f.write(f"# Auto-generated build configuration\n")
     f.write(f"CUDA_ARCHITECTURES = {cuda_architectures}\n")
     f.write(f"ENABLED_EXTENSIONS = {enabled_extensions}\n")
+    f.write(f"VERSION = {__version__!r}\n")
 
 # TODO: Make this setup script more robust (plus conda recipe)
+# name/description/author/version/python_requires are declared statically in
+# pyproject.toml's [project] table, which setuptools reads automatically.
 setup(
-    name="zipFFT",
-    description="Custom FFT operations for PyTorch using cuFFTDx",
-    author="Matthew Giammar",
-    python_requires=">=3.9",
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},
-    version=__version__,
 )
