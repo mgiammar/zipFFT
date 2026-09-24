@@ -116,14 +116,16 @@ pip install torch torchvision pytest pyyaml nvidia-mathdx
 installed into this environment rather than a fresh copy in an isolated build env:
 
 ```bash
-pip install -e . --no-build-isolation
+NINJA_STATUS="[%f/%t | %es elapsed] " pip install -e . --no-build-isolation -v
 ```
+
+Note the extra `NINJA_STATUS` which emits the total progress, and the `-v` flag to see the full build log. If you prefer, you can run the basic `pip install -e .` command without the extra flags.
 
 If you omit `--no-build-isolation`, pip will still auto-install `nvidia-mathdx` (declared in
 `pyproject.toml`'s `[build-system] requires`) into its isolated build environment, but that
 environment's PyTorch may not match the CUDA build you have installed.
 
-To reduce compile time by targeting only your GPU's compute capability and skipping unused modules.
+To reduce compile time by targeting only your GPU's compute capability and skipping unused modules. You may also use the ``MAX_JOBS`` environment variable to limit the number of parallel compilation jobs.
 
 > Replace `8.9` with your GPU's SM version (e.g. `8.0` for A100, `9.0` for H100, `10.0` for B200, `10.3` for B300, `12.0` for RTX Blackwell). If `CUDA_ARCHITECTURES` is not set, all supported architectures are compiled by default. Helpful list of compute architectures by GPU: [Arnon Shimoni - Matching CUDA arch and CUDA gencode for various NVIDIA architectures](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)
 
