@@ -161,3 +161,15 @@ complex_conv2d:
       cross_correlate: true
       use_tiled_swizzled_io: true
       ffts_per_block_y: 2
+    # ----------------------------------------------------------------
+    # Panther-EM overlap-save strips: whole-width FFTs of a band of an
+    # image's rows (heights 1024/2048/4096) at widths 2048 and 4096.
+    # The square shapes come from the Falcon 4i entry above; Panther-EM
+    # splits a chunk of kernels into calls of whichever batches exist.
+    #-----------------------------------------------------------------
+    - signal_shapes: [[256, 256], [384, 384], [512, 512], [640, 640], [768, 768]]
+      fft_shapes: [[1024, 2048], [1024, 4096], [2048, 4096], [4096, 2048]]
+      batches: [1, 2, 4, 8, 16, 32]
+      cross_correlate: true
+      use_tiled_swizzled_io: true
+      ffts_per_block_y: 2
